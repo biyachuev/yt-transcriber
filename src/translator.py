@@ -120,27 +120,30 @@ class Translator:
     ) -> str:
         """
         Перевод с использованием NLLB
-        
+    
         Args:
             text: Текст для перевода
             source_lang: Исходный язык
             target_lang: Целевой язык
-            
+        
         Returns:
             Переведенный текст
         """
         self._load_nllb_model()
-        
+    
         # Разбиваем текст на чанки для обработки
         chunks = chunk_text(text, max_tokens=500)
         logger.info(f"Текст разбит на {len(chunks)} частей для перевода")
-        
+    
         translated_chunks = []
-        
+    
         src_lang_code = self._get_nllb_language_code(source_lang)
         tgt_lang_code = self._get_nllb_language_code(target_lang)
-        
+    
         for chunk in tqdm(chunks, desc="Перевод"):
+            # Устанавливаем исходный язык
+            self.tokenizer.src_lang = src_lang_code
+        
             # Токенизация
             inputs = self.tokenizer(
                 chunk,
@@ -149,34 +152,35 @@ class Translator:
                 truncation=True,
                 max_length=512
             )
-            
+        
             # Перемещаем на устройство
             if self.device != "cpu":
                 inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            
-            # Устанавливаем язык источника
-            self.tokenizer.src_lang = src_lang_code
-            
+        
+            # Получаем ID токена для целевого языка
+            # ИСПРАВЛЕНИЕ: используем правильный метод
+            forced_bos_token_id = self.tokenizer.convert_tokens_to_ids(tgt_lang_code)
+        
             # Генерация перевода
             translated_tokens = self.model.generate(
                 **inputs,
-                forced_bos_token_id=self.tokenizer.lang_code_to_id[tgt_lang_code],
+                forced_bos_token_id=forced_bos_token_id,
                 max_length=512,
                 num_beams=5,
                 early_stopping=True
             )
-            
+        
             # Декодирование
             translated_text = self.tokenizer.batch_decode(
                 translated_tokens,
                 skip_special_tokens=True
             )[0]
-            
-            translated_chunks.append(translated_text)
         
+            translated_chunks.append(translated_text)
+    
         result = '\n\n'.join(translated_chunks)
         logger.info("Перевод завершен успешно")
-        
+    
         return result
     
     def _translate_with_openai(

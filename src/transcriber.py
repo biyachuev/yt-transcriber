@@ -7,9 +7,9 @@ import whisper
 from tqdm import tqdm
 import torch
 
-from .config import settings, TranscribeOptions
-from .logger import logger
-from .utils import format_timestamp, estimate_processing_time
+from src.config import settings, TranscribeOptions
+from src.logger import logger
+from src.utils import format_timestamp, estimate_processing_time
 
 
 class TranscriptionSegment:
@@ -68,11 +68,39 @@ class Transcriber:
         else:
             raise ValueError(f"Неподдерживаемый метод: {self.method}")
         
-        self.model = whisper.load_model(
-            model_name,
-            device=self.device,
-            download_root=str(settings.WHISPER_MODEL_DIR)
-        )
+        # Пытаемся загрузить на выбранное устройство, при ошибке SparseMPS переключаемся на CPU
+        try:
+            self.model = whisper.load_model(
+                model_name,
+                device=self.device,
+                download_root=str(settings.WHISPER_MODEL_DIR)
+            )
+        except NotImplementedError as e:
+            message = str(e)
+            if "SparseMPS" in message or "_sparse_coo_tensor" in message:
+                logger.warning("На MPS отсутствует поддержка требуемой операции. Переключаемся на CPU...")
+                self.device = "cpu"
+                self.model = whisper.load_model(
+                    model_name,
+                    device=self.device,
+                    download_root=str(settings.WHISPER_MODEL_DIR)
+                )
+            else:
+                raise
+        except RuntimeError as e:
+            # Подстраховка на случай других ошибок MPS
+            message = str(e)
+            if "MPS" in message and ("sparse" in message.lower() or "_sparse_coo_tensor" in message):
+                logger.warning("Возникла ошибка MPS при загрузке модели. Переключаемся на CPU...")
+                self.device = "cpu"
+                self.model = whisper.load_model(
+                    model_name,
+                    device=self.device,
+                    download_root=str(settings.WHISPER_MODEL_DIR)
+                )
+            else:
+                raise
+        
         logger.info("Модель загружена успешно")
     
     def transcribe(
@@ -120,7 +148,8 @@ class Transcriber:
             'language': language,
             'task': 'transcribe',
             'verbose': False,
-            'fp16': False if self.device == "cpu" else True,
+            # Включаем fp16 только на CUDA. На CPU/MPS оставляем fp32 для стабильности
+            'fp16': True if self.device == "cuda" else False,
         }
         
         logger.info("Транскрибирование в процессе...")

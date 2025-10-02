@@ -51,9 +51,13 @@ class Settings(BaseSettings):
         self.WHISPER_MODEL_DIR.mkdir(exist_ok=True, parents=True)
         self.NLLB_MODEL_DIR.mkdir(exist_ok=True, parents=True)
         
-        # Определяем устройство для M1 Mac
+        #  Для M1/M2 используем CPU из-за проблем с MPS в Whisper
         if os.uname().machine == 'arm64':
-            self.WHISPER_DEVICE = "mps"
+            self.WHISPER_DEVICE = "cpu"
+            import logging
+            logging.getLogger("youtube_transcriber").info(
+            "Apple Silicon detected: Using CPU (MPS has compatibility issues with Whisper)"
+        )
 
 
 # Глобальный экземпляр настроек
