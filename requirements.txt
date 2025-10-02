@@ -1,0 +1,29 @@
+# Core dependencies
+yt-dlp>=2023.12.30
+openai-whisper>=20231117
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Translation
+transformers>=4.35.0
+sentencepiece>=0.1.99
+accelerate>=0.25.0
+
+# Document generation
+python-docx>=1.1.0
+markdown>=3.5.0
+
+# Utilities
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Optional: OpenAI API support (расширенная версия)
+openai>=1.6.0
+
+# Optional: Speaker diarization (расширенная версия)
+pyannote.audio>=3.1.0
+
+# Optional: Text file processing (расширенная версия)
+python-docx>=1.1.0

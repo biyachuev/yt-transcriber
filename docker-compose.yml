@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  transcriber:
+    build: .
+    container_name: youtube-transcriber
+    volumes:
+      # Монтируем директории для сохранения результатов и кеша
+      - ./output:/app/output
+      - ./temp:/app/temp
+      - ./logs:/app/logs
+      - ./models:/app/models
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    # Пример использования
+    command: >
+      --url "https://youtube.com/watch?v=..."
+      --transcribe whisper_base
+      --translate NLLB
+    # Раскомментируйте для использования GPU
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
