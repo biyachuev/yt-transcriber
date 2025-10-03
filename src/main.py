@@ -181,7 +181,7 @@ def process_youtube_video(
         translation_segments=translation_segments,
         transcribe_method=transcribe_method,
         translate_method=translate_method_str,
-        with_timestamps=True
+        with_timestamps=False
     )
     
     logger.info("\n" + "=" * 60)

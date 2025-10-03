@@ -6,8 +6,8 @@ from src.transcriber import Transcriber
 from src.logger import logger
 
 # Путь к уже скачанному файлу
-audio_path = Path("temp/Rick_Astley_-_Never_Gonna_Give_You_Up_(Official_Video)_(4K_Remaster).mp3")
-# audio_path = Path("temp/NEW_FIDE_HIKARULE_DRAMA!!.mp3")
+# audio_path = Path("temp/Rick_Astley_-_Never_Gonna_Give_You_Up_(Official_Video)_(4K_Remaster).mp3")
+audio_path = Path("temp/NEW_FIDE_HIKARULE_DRAMA!!.mp3")
 
 if not audio_path.exists():
     print(f"❌ Файл не найден: {audio_path}")
