@@ -111,28 +111,54 @@ def chunk_text(text: str, max_tokens: int = 2000) -> list[str]:
     return chunks
 
 
-def estimate_processing_time(duration_seconds: float, operation: str = "transcribe") -> str:
+def estimate_processing_time(
+    duration_seconds: float, 
+    operation: str = "transcribe",
+    model: str = "whisper_base"
+) -> str:
     """
-    Оценка времени обработки
+    Оценка времени обработки (калиброванные значения для M1 MacBook Air)
     
     Args:
         duration_seconds: Длительность аудио в секундах
         operation: Тип операции ('transcribe' или 'translate')
+        model: Модель для транскрибирования
         
     Returns:
         Строка с оценкой времени
     """
     if operation == "transcribe":
-        # Whisper обычно обрабатывает в реальном времени или чуть медленнее
-        estimated = duration_seconds * 1.5
+        # Множители для разных моделей (M1 CPU, откалиброванные)
+        multipliers = {
+            "whisper_base": 0.06,   # Очень быстро!
+            "whisper_small": 0.19,  # Всё ещё быстро
+        }
+        estimated = duration_seconds * multipliers.get(model, 0.10)
     else:  # translate
-        # Перевод обычно быстрее
-        estimated = duration_seconds * 0.3
+        # NLLB на M1 CPU
+        estimated = duration_seconds * 0.47
     
     minutes = int(estimated // 60)
-    if minutes < 1:
-        return "менее 1 минуты"
-    elif minutes == 1:
-        return "около 1 минуты"
-    else:
+    seconds = int(estimated % 60)
+    
+    # Детальное форматирование
+    if estimated < 5:
+        return "несколько секунд"
+    elif estimated < 10:
+        return f"{int(estimated)} секунд"
+    elif estimated < 30:
+        return f"около {seconds} секунд"
+    elif estimated < 45:
+        return "около 30 секунд"
+    elif estimated < 60:
+        return "около минуты"
+    elif estimated < 90:
+        return "1-1.5 минуты"
+    elif minutes < 3:
         return f"около {minutes} минут"
+    elif minutes < 5:
+        return f"{minutes}-{minutes+1} минут"
+    elif minutes < 10:
+        return f"около {minutes} минут"
+    else:
+        return f"около {minutes} минут (±10%)"

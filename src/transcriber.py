@@ -139,7 +139,7 @@ class Transcriber:
                 text=True
             )
             duration = float(result.stdout.strip())
-            logger.info(f"Оценочное время обработки: {estimate_processing_time(duration, 'transcribe')}")
+            logger.info(f"Оценочное время обработки: {estimate_processing_time(duration, 'transcribe', self.method)}")
         except Exception as e:
             logger.debug(f"Не удалось определить длительность: {e}")
         
