@@ -46,6 +46,24 @@ class TestSanitizeFilename:
         filename = 'Тестовый файл'
         result = sanitize_filename(filename)
         assert 'Тестовый' in result
+    
+    def test_removes_exclamation_marks(self):
+        """Проверка удаления восклицательных знаков (проблема с Cursor terminal)"""
+        filename = 'NEW_FIDE_HIKARULE_DRAMA!!.mp3'
+        result = sanitize_filename(filename)
+        assert '!' not in result
+        assert 'NEW_FIDE_HIKARULE_DRAMA__' in result or 'NEW_FIDE_HIKARULE_DRAMA_' in result
+    
+    def test_removes_multiple_special_chars(self):
+        """Проверка удаления множественных специальных символов"""
+        filename = 'Test!@#$%^&*()_+{}|:<>?[]\\;\'",./`~file.mp3'
+        result = sanitize_filename(filename)
+        # Проверяем что основные проблемные символы удалены
+        problematic_chars = ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')', 
+                           '{', '}', '|', ':', '<', '>', '?', '[', ']', '\\', 
+                           ';', "'", '"', ',', '/', '`', '~']
+        for char in problematic_chars:
+            assert char not in result
 
 
 class TestFormatTimestamp:

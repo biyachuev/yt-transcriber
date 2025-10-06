@@ -164,7 +164,7 @@ class DocumentWriter:
                 translation_text = transcriber.segments_to_text(translation_segments)
             
             sections.append({
-                'title': 'Перевод',
+                'title': f'Перевод документа (метод перевода: {translate_method})',
                 'method': translate_method,
                 'content': translation_text
             })
@@ -178,8 +178,8 @@ class DocumentWriter:
             transcription_text = transcriber.segments_to_text(transcription_segments)
         
         sections.append({
-            'title': 'Расшифровка',
-            'method': transcribe_method,
+            'title': 'Расшифровка текста',
+            'method': f'Способ расшифровки: {transcribe_method}' if transcribe_method else '',
             'content': transcription_text
         })
         

@@ -71,9 +71,10 @@ class TranscribeOptions:
     """Доступные методы транскрибирования"""
     WHISPER_BASE = "whisper_base"
     WHISPER_SMALL = "whisper_small"
+    WHISPER_MEDIUM = "whisper_medium"
     WHISPER_OPENAI_API = "whisper_openai_api"
-    
-    ALL = [WHISPER_BASE, WHISPER_SMALL, WHISPER_OPENAI_API]
+
+    ALL = [WHISPER_BASE, WHISPER_SMALL, WHISPER_MEDIUM, WHISPER_OPENAI_API]
 
 
 class TranslateOptions:

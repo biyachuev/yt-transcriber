@@ -65,6 +65,8 @@ class Transcriber:
             model_name = "base"
         elif self.method == TranscribeOptions.WHISPER_SMALL:
             model_name = "small"
+        elif self.method == TranscribeOptions.WHISPER_MEDIUM:
+            model_name = "medium"
         else:
             raise ValueError(f"Неподдерживаемый метод: {self.method}")
         
@@ -107,20 +109,25 @@ class Transcriber:
         self,
         audio_path: Path,
         language: Optional[str] = None,
-        with_speakers: bool = False
+        with_speakers: bool = False,
+        initial_prompt: Optional[str] = None
     ) -> List[TranscriptionSegment]:
         """
         Транскрибирование аудиофайла
-        
+
         Args:
             audio_path: Путь к аудиофайлу
             language: Код языка ('ru' или 'en'), None для автоопределения
             with_speakers: Выполнить ли speaker diarization
-            
+            initial_prompt: Промпт для Whisper (помогает распознавать имена, термины)
+
         Returns:
             Список сегментов транскрипции
         """
         logger.info(f"Начало транскрибирования: {audio_path.name}")
+
+        if initial_prompt:
+            logger.info(f"Используется промпт для улучшения качества: {initial_prompt}")
         
         if with_speakers:
             logger.warning("Speaker diarization будет доступно в расширенной версии")
@@ -151,6 +158,10 @@ class Transcriber:
             # Включаем fp16 только на CUDA. На CPU/MPS оставляем fp32 для стабильности
             'fp16': True if self.device == "cuda" else False,
         }
+
+        # Добавляем промпт если он передан
+        if initial_prompt:
+            transcribe_options['initial_prompt'] = initial_prompt
         
         logger.info("Транскрибирование в процессе...")
         
@@ -182,14 +193,70 @@ class Transcriber:
     def segments_to_text(self, segments: List[TranscriptionSegment]) -> str:
         """
         Преобразование сегментов в текст
-        
+
         Args:
             segments: Список сегментов
-            
+
         Returns:
             Текст транскрипции
         """
         return '\n\n'.join([seg.text for seg in segments])
+
+    def update_segments_from_text(self, segments: List[TranscriptionSegment], refined_text: str) -> List[TranscriptionSegment]:
+        """
+        Обновление сегментов с улучшенным текстом
+
+        Разбивает улучшенный текст обратно на сегменты, сохраняя временные метки
+
+        Args:
+            segments: Исходные сегменты с временными метками
+            refined_text: Улучшенный текст
+
+        Returns:
+            Обновленные сегменты
+        """
+        # Разбиваем улучшенный текст на абзацы
+        paragraphs = [p.strip() for p in refined_text.split('\n\n') if p.strip()]
+
+        # Если количество абзацев совпадает с сегментами - просто заменяем текст
+        if len(paragraphs) == len(segments):
+            updated_segments = []
+            for seg, new_text in zip(segments, paragraphs):
+                updated_seg = TranscriptionSegment(
+                    start=seg.start,
+                    end=seg.end,
+                    text=new_text,
+                    speaker=seg.speaker
+                )
+                updated_segments.append(updated_seg)
+            return updated_segments
+
+        # Иначе пропорционально распределяем временные метки
+        logger.warning(f"Количество абзацев ({len(paragraphs)}) не совпадает с сегментами ({len(segments)})")
+        logger.info("Создание новых сегментов на основе улучшенного текста...")
+
+        if not segments:
+            return []
+
+        total_duration = segments[-1].end - segments[0].start
+        segment_duration = total_duration / len(paragraphs) if paragraphs else 0
+
+        updated_segments = []
+        start_time = segments[0].start
+
+        for i, paragraph in enumerate(paragraphs):
+            end_time = start_time + segment_duration if i < len(paragraphs) - 1 else segments[-1].end
+
+            updated_seg = TranscriptionSegment(
+                start=start_time,
+                end=end_time,
+                text=paragraph,
+                speaker=None
+            )
+            updated_segments.append(updated_seg)
+            start_time = end_time
+
+        return updated_segments
     
     def segments_to_text_with_timestamps(
         self,

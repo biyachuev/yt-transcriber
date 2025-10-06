@@ -213,36 +213,35 @@ class Translator:
     ) -> List:
         """
         Перевод списка сегментов транскрипции
-        
+
         Args:
             segments: Список объектов TranscriptionSegment
             source_lang: Исходный язык
             target_lang: Целевой язык
-            
+
         Returns:
             Список переведенных сегментов
         """
         from .transcriber import TranscriptionSegment
-        
-        # Собираем весь текст для перевода
-        texts = [seg.text for seg in segments]
-        full_text = '\n\n'.join(texts)
-        
-        # Переводим
-        translated_text = self.translate_text(full_text, source_lang, target_lang)
-        
-        # Разбиваем обратно на сегменты
-        translated_parts = translated_text.split('\n\n')
-        
-        # Создаем новые сегменты с переведенным текстом
+        from tqdm import tqdm
+
+        logger.info(f"Перевод {len(segments)} сегментов...")
+
+        # Переводим каждый сегмент отдельно, чтобы избежать проблем с разделителями
         translated_segments = []
-        for i, seg in enumerate(segments):
+
+        for seg in tqdm(segments, desc="Перевод сегментов"):
+            # Переводим текст сегмента
+            translated_text = self.translate_text(seg.text, source_lang, target_lang)
+
+            # Создаем новый сегмент с переведенным текстом
             translated_seg = TranscriptionSegment(
                 start=seg.start,
                 end=seg.end,
-                text=translated_parts[i] if i < len(translated_parts) else seg.text,
+                text=translated_text,
                 speaker=seg.speaker
             )
             translated_segments.append(translated_seg)
-        
+
+        logger.info("Перевод сегментов завершен")
         return translated_segments
