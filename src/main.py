@@ -98,7 +98,7 @@ YouTube Transcriber & Translator
                                 Делает перевод более естественным
                                 Требует запущенный Ollama сервер
 
-    --speakers                  Включить определение спикеров (в разработке)
+    --speakers                  В��лючить определение спикеров (в разработке)
 
     --translate-model MODEL     Модель NLLB для перевода
                                 (по умолчанию: facebook/nllb-200-distilled-1.3B)
@@ -253,7 +253,7 @@ def process_text_file(
             from .translator import Translator
 
 
-            translator = Translator(method=method)  # TODO: Add model_name parameter
+            translator = Translator(method=method, model_name=translate_model)
             segments_to_translate = refined_segments if refined_segments else original_segments
 
             try:
@@ -488,7 +488,7 @@ def process_youtube_video(
         from .translator import Translator
 
         if source_lang == "en":
-            translator = Translator(method=translate_method)
+            translator = Translator(method=translate_method, model_name=translate_model)
 
             # Если есть улучшенная версия, переводим только её
             if refined_transcription_segments:
@@ -583,7 +583,7 @@ def process_youtube_video(
             )
 
             logger.info("\n" + "=" * 60)
-            logger.info("Обработка завершена успешно!")
+            logger.info("Обрабо��ка завершена успешно!")
             logger.info(f"Результаты сохранены:")
             logger.info(f"\nОригинальная версия:")
             logger.info(f"  - {docx_path_orig}")
@@ -758,7 +758,7 @@ def process_local_audio(
 
 
         if source_lang == "en":
-            translator = Translator(method=translate_method)
+            translator = Translator(method=translate_method, model_name=translate_model)
 
             # Если есть улучшенная версия, переводим только её
             if refined_transcription_segments:
