@@ -27,9 +27,9 @@ class Settings(BaseSettings):
     # Производительность на M1 CPU: whisper_base 0.06x, whisper_small 0.19x
     
     # NLLB настройки
-    NLLB_MODEL_NAME: str = "facebook/nllb-200-distilled-600M"
+    NLLB_MODEL_NAME: str = "facebook/nllb-200-distilled-1.3B"
     NLLB_MODEL_DIR: Path = BASE_DIR / "models" / "nllb"
-    # Производительность на M1 CPU: 0.47x
+    # Производительность на M1 CPU: ~0.25x (лучше качество, медленнее в ~2 раза)
     
     # Языки
     SUPPORTED_LANGUAGES: list[str] = ["ru", "en"]

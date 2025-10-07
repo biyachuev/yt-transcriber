@@ -10,9 +10,9 @@ from .config import settings, TranscribeOptions, TranslateOptions
 from .logger import logger
 from .downloader import YouTubeDownloader
 from .transcriber import Transcriber
-from .translator import Translator
 from .document_writer import DocumentWriter
 from .utils import detect_language, sanitize_filename, create_whisper_prompt, create_whisper_prompt_with_llm
+from .text_reader import TextReader
 
 
 def load_prompt_from_file(prompt_file_path: str) -> str:
@@ -99,6 +99,13 @@ YouTube Transcriber & Translator
                                 Требует запущенный Ollama сервер
 
     --speakers                  Включить определение спикеров (в разработке)
+
+    --translate-model MODEL     Модель NLLB для перевода
+                                (по умолчанию: facebook/nllb-200-distilled-1.3B)
+                                Доступные: facebook/nllb-200-distilled-600M (быстрее),
+                                facebook/nllb-200-distilled-1.3B (лучше качество),
+                                facebook/nllb-200-3.3B (самое лучшее, но медленно)
+
     --help, -h                  Показать эту справку
 
 Доступные методы транскрибирования:
@@ -154,6 +161,178 @@ YouTube Transcriber & Translator
     print(help_text)
 
 
+def process_text_file(
+    text_path: str,
+    translate_methods: Optional[list[str]] = None,
+    refine_model: Optional[str] = None,
+    refine_translation_model: Optional[str] = None,
+    translate_model: Optional[str] = None
+):
+    """
+    Обработка текстового файла (docx, md, txt)
+
+    Args:
+        text_path: Путь к текстовому файлу
+        translate_methods: Список методов перевода
+        refine_model: Модель Ollama для улучшения текста
+        refine_translation_model: Модель Ollama для улучшения перевода
+    """
+    logger.info("=" * 60)
+    logger.info("Начало обработки текстового файла")
+    logger.info("=" * 60)
+
+    text_path_obj = Path(text_path)
+    text_title = sanitize_filename(text_path_obj.stem)
+
+    # 1. Чтение текста из файла
+    logger.info(f"\n[1/3] Чтение текста из файла: {text_path}")
+
+    text_reader = TextReader()
+    try:
+        text_content = text_reader.read_file(text_path)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Ошибка чтения файла: {e}")
+        return
+
+    # Определяем язык
+    detected_language = text_reader.detect_language(text_content)
+    logger.info(f"Определён язык: {"русский" if detected_language == "ru" else "английский"}")
+
+    # Создаём псевдо-сегменты для совместимости с существующей архитектурой
+    paragraphs = [p.strip() for p in text_content.split("\n\n") if p.strip()]
+
+    original_segments = []
+    for i, para in enumerate(paragraphs):
+        if para:
+            original_segments.append({
+                "text": para,
+                "start": None,
+                "end": None,
+                "speaker": None
+            })
+
+    logger.info(f"Текст разбит на {len(original_segments)} параграфов")
+
+    # 1.5. Улучшение текста с помощью LLM
+    refined_segments = None
+    if refine_model:
+        logger.info(f"\n[1.5/3] Улучшение текста с помощью {refine_model}...")
+
+        try:
+            from .text_refiner import TextRefiner
+
+            refiner = TextRefiner(model_name=refine_model)
+            refined_text = refiner.refine_text(text_content)
+            refined_paragraphs = [p.strip() for p in refined_text.split("\n\n") if p.strip()]
+
+            refined_segments = []
+            for para in refined_paragraphs:
+                if para:
+                    refined_segments.append({
+                        "text": para,
+                        "start": None,
+                        "end": None,
+                        "speaker": None
+                    })
+
+            logger.info(f"✅ Улучшение завершено ({len(refined_segments)} параграфов)")
+
+        except ImportError:
+            logger.warning("⚠️  text_refiner не доступен, пропускаем улучшение")
+        except Exception as e:
+            logger.error(f"Ошибка при улучшении текста: {e}")
+            logger.warning("Продолжаем без улучшения")
+
+    # 2. Перевод
+    translated_segments_dict = {}
+    if translate_methods:
+        logger.info(f"\n[2/3] Перевод текста...")
+
+        for method in translate_methods:
+            logger.info(f"\n  Метод перевода: {method}")
+            from .translator import Translator
+
+
+            translator = Translator(method=method)  # TODO: Add model_name parameter
+            segments_to_translate = refined_segments if refined_segments else original_segments
+
+            try:
+                translated_segments = translator.translate_segments(
+                    segments_to_translate,
+                    source_lang=detected_language,
+                    target_lang="ru" if detected_language == "en" else "en"
+                )
+
+                if refine_translation_model and translated_segments:
+                    logger.info(f"  Улучшение перевода с помощью {refine_translation_model}...")
+
+                    try:
+                        from .text_refiner import TextRefiner
+
+                        translation_refiner = TextRefiner(model_name=refine_translation_model)
+                        translated_text = "\n\n".join([seg["text"] for seg in translated_segments])
+                        refined_translation = translation_refiner.refine_translation(translated_text)
+                        refined_translation_paragraphs = [p.strip() for p in refined_translation.split("\n\n") if p.strip()]
+
+                        for i, para in enumerate(refined_translation_paragraphs):
+                            if i < len(translated_segments):
+                                translated_segments[i]["text"] = para
+
+                        logger.info(f"  ✅ Улучшение перевода завершено")
+
+                    except Exception as e:
+                        logger.error(f"Ошибка при улучшении перевода: {e}")
+                        logger.warning("Используем неулучшенный перевод")
+
+                translated_segments_dict[method] = translated_segments
+
+            except Exception as e:
+                logger.error(f"Ошибка при переводе методом {method}: {e}")
+
+    # 3. Создание документов
+    logger.info(f"\n[3/3] Создание документов...")
+
+    writer = DocumentWriter()
+
+    # Создаем документ с улучшенной версией (если есть)
+    if refined_segments:
+        logger.info(f"  Создание документа с улучшенным текстом...")
+        docx_path_refined, md_path_refined = writer.create_from_segments(
+            title=f"{text_title}_refined",
+            transcription_segments=refined_segments,
+            translation_segments=None,
+            transcribe_method=f"Refined with {refine_model}",
+            translate_method="",
+            with_timestamps=False
+        )
+        logger.info(f"  ✅ Улучшенный: {md_path_refined}")
+
+    # Создаем документы с переводами
+    if translated_segments_dict:
+        for method, translated_segs in translated_segments_dict.items():
+            logger.info(f"  Создание документа с переводом ({method})...")
+
+            docx_path_trans, md_path_trans = writer.create_from_segments(
+                title=f"{text_title}_translated_{method}",
+                transcription_segments=refined_segments if refined_segments else original_segments,
+                translation_segments=translated_segs,
+                transcribe_method=f"Loaded from {text_path_obj.suffix}" + (f" + {refine_model}" if refine_model else ""),
+                translate_method=method,
+                with_timestamps=False
+            )
+            logger.info(f"  ✅ Перевод: {md_path_trans}")
+
+    # Если ничего не создали, выводим предупреждение
+    if not refined_segments and not translated_segments_dict:
+        logger.warning("⚠️  Не указаны параметры --refine-model или --translate")
+        logger.info("Исходный файл не изменен. Укажите --refine-model для улучшения или --translate для перевода.")
+
+    logger.info("\n" + "=" * 60)
+    logger.info("✅ Обработка текстового файла завершена!")
+    logger.info("=" * 60)
+
+
+
 def validate_args(args) -> bool:
     """
     Валидация аргументов командной строки
@@ -184,10 +363,6 @@ def validate_args(args) -> bool:
         logger.error("Для аудио/видео необходимо указать метод транскрибирования (--transcribe)")
         return False
     
-    # Для текста требуется метод перевода
-    if args.input_text and not args.translate:
-        logger.error("Для текстового файла необходимо указать метод перевода (--translate)")
-        return False
     
     # Проверяем существование файлов
     if args.input_audio:
@@ -210,7 +385,8 @@ def process_youtube_video(
     with_speakers: bool = False,
     custom_prompt: Optional[str] = None,
     refine_model: Optional[str] = None,
-    refine_translation_model: Optional[str] = None
+    refine_translation_model: Optional[str] = None,
+    translate_model: Optional[str] = None
 ):
     """
     Обработка YouTube видео
@@ -308,7 +484,8 @@ def process_youtube_video(
 
         # Используем первый метод перевода (в MVP)
         translate_method = translate_methods[0]
-        translate_method_str = translate_method
+
+        from .translator import Translator
 
         if source_lang == "en":
             translator = Translator(method=translate_method)
@@ -491,7 +668,8 @@ def process_local_audio(
     with_speakers: bool = False,
     custom_prompt: Optional[str] = None,
     refine_model: Optional[str] = None,
-    refine_translation_model: Optional[str] = None
+    refine_translation_model: Optional[str] = None,
+    translate_model: Optional[str] = None
 ):
     """
     Обработка локального аудиофайла
@@ -572,8 +750,12 @@ def process_local_audio(
         source_lang = detect_language(original_text)
 
         # Используем первый метод перевода (в MVP)
+
         translate_method = translate_methods[0]
         translate_method_str = translate_method
+
+        from .translator import Translator
+
 
         if source_lang == "en":
             translator = Translator(method=translate_method)
@@ -770,6 +952,8 @@ def main():
     parser.add_argument('--refine-model', type=str, help='Модель Ollama для улучшения транскрипции (например: qwen2.5:3b)')
     parser.add_argument('--refine-translation', type=str, help='Модель Ollama для улучшения перевода (например: qwen2.5:3b)')
     parser.add_argument('--speakers', action='store_true', help='Включить определение спикеров')
+    parser.add_argument('--translate-model', type=str, help='Модель NLLB для перевода (по умолчанию: facebook/nllb-200-distilled-1.3B)')
+
     parser.add_argument('--help', '-h', action='store_true', help='Показать справку')
 
     args = parser.parse_args()
@@ -803,7 +987,8 @@ def main():
                 with_speakers=args.speakers,
                 custom_prompt=custom_prompt,
                 refine_model=args.refine_model,
-                refine_translation_model=args.refine_translation
+                refine_translation_model=args.refine_translation,
+                translate_model=args.translate_model
             )
         elif args.input_audio:
             process_local_audio(
@@ -813,11 +998,18 @@ def main():
                 with_speakers=args.speakers,
                 custom_prompt=custom_prompt,
                 refine_model=args.refine_model,
-                refine_translation_model=args.refine_translation
+                refine_translation_model=args.refine_translation,
+                translate_model=args.translate_model
             )
         elif args.input_text:
-            logger.info("Обработка текстовых файлов будет доступна в следующей версии")
-            sys.exit(1)
+            process_text_file(
+                text_path=args.input_text,
+                translate_methods=translate_methods,
+                refine_model=args.refine_model,
+                refine_translation_model=args.refine_translation,
+                translate_model=args.translate_model
+            )
+
 
     except KeyboardInterrupt:
         logger.info("\nОбработка прервана пользователем")

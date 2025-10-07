@@ -200,7 +200,14 @@ class Transcriber:
         Returns:
             Текст транскрипции
         """
-        return '\n\n'.join([seg.text for seg in segments])
+        # Поддерживаем как объекты, так и словари
+        result = []
+        for seg in segments:
+            if hasattr(seg, 'text'):
+                result.append(seg.text)
+            elif isinstance(seg, dict) and 'text' in seg:
+                result.append(seg['text'])
+        return '\n\n'.join(result)
 
     def update_segments_from_text(self, segments: List[TranscriptionSegment], refined_text: str) -> List[TranscriptionSegment]:
         """
