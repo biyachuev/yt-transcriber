@@ -98,7 +98,7 @@ YouTube Transcriber & Translator
                                 Делает перевод более естественным
                                 Требует запущенный Ollama сервер
 
-    --speakers                  В��лючить определение спикеров (в разработке)
+    --speakers                  Включить определение спикеров (в разработке)
 
     --translate-model MODEL     Модель NLLB для перевода
                                 (по умолчанию: facebook/nllb-200-distilled-1.3B)
@@ -196,7 +196,7 @@ def process_text_file(
 
     # Определяем язык
     detected_language = text_reader.detect_language(text_content)
-    logger.info(f"Определён язык: {"русский" if detected_language == "ru" else "английский"}")
+    logger.info(f"Определён язык: {'русский' if detected_language == 'ru' else 'английский'}")
 
     # Создаём псевдо-сегменты для совместимости с существующей архитектурой
     paragraphs = [p.strip() for p in text_content.split("\n\n") if p.strip()]
@@ -245,6 +245,7 @@ def process_text_file(
 
     # 2. Перевод
     translated_segments_dict = {}
+    refined_translation_segments_dict = {}
     if translate_methods:
         logger.info(f"\n[2/3] Перевод текста...")
 
@@ -252,6 +253,8 @@ def process_text_file(
             logger.info(f"\n  Метод перевода: {method}")
             from .translator import Translator
 
+            # Формируем ключ с моделью для NLLB
+            method_key = f"{method} ({translate_model})" if translate_model and method == "NLLB" else method
 
             translator = Translator(method=method, model_name=translate_model)
             segments_to_translate = refined_segments if refined_segments else original_segments
@@ -263,31 +266,42 @@ def process_text_file(
                     target_lang="ru" if detected_language == "en" else "en"
                 )
 
-                if refine_translation_model and translated_segments:
-                    logger.info(f"  Улучшение перевода с помощью {refine_translation_model}...")
-
-                    try:
-                        from .text_refiner import TextRefiner
-
-                        translation_refiner = TextRefiner(model_name=refine_translation_model)
-                        translated_text = "\n\n".join([seg["text"] for seg in translated_segments])
-                        refined_translation = translation_refiner.refine_translation(translated_text)
-                        refined_translation_paragraphs = [p.strip() for p in refined_translation.split("\n\n") if p.strip()]
-
-                        for i, para in enumerate(refined_translation_paragraphs):
-                            if i < len(translated_segments):
-                                translated_segments[i]["text"] = para
-
-                        logger.info(f"  ✅ Улучшение перевода завершено")
-
-                    except Exception as e:
-                        logger.error(f"Ошибка при улучшении перевода: {e}")
-                        logger.warning("Используем неулучшенный перевод")
-
-                translated_segments_dict[method] = translated_segments
+                translated_segments_dict[method_key] = translated_segments
 
             except Exception as e:
                 logger.error(f"Ошибка при переводе методом {method}: {e}")
+                continue
+
+            # Улучшение перевода с помощью LLM (если указана модель и перевод успешен)
+            if refine_translation_model and method_key in translated_segments_dict:
+                logger.info(f"  Улучшение перевода с помощью {refine_translation_model}...")
+
+                try:
+                    from .text_refiner import TextRefiner
+                    from .transcriber import TranscriptionSegment
+
+                    translation_refiner = TextRefiner(model_name=refine_translation_model)
+                    translated_text = "\n\n".join([seg.text for seg in translated_segments_dict[method_key]])
+                    refined_translation = translation_refiner.refine_translation(translated_text)
+                    refined_translation_paragraphs = [p.strip() for p in refined_translation.split("\n\n") if p.strip()]
+
+                    # Создаем новые сегменты для улучшенного перевода
+                    refined_translated_segments = []
+                    for i, para in enumerate(refined_translation_paragraphs):
+                        if i < len(translated_segments_dict[method_key]):
+                            refined_translated_segments.append(TranscriptionSegment(
+                                text=para,
+                                start=translated_segments_dict[method_key][i].start,
+                                end=translated_segments_dict[method_key][i].end,
+                                speaker=translated_segments_dict[method_key][i].speaker
+                            ))
+
+                    refined_translation_segments_dict[method_key] = refined_translated_segments
+                    logger.info(f"  ✅ Улучшение перевода завершено")
+
+                except Exception as e:
+                    logger.error(f"Ошибка при улучшении перевода: {e}")
+                    logger.warning("Используем неулучшенный перевод")
 
     # 3. Создание документов
     logger.info(f"\n[3/3] Создание документов...")
@@ -321,6 +335,21 @@ def process_text_file(
                 with_timestamps=False
             )
             logger.info(f"  ✅ Перевод: {md_path_trans}")
+
+    # Создаем документы с улучшенными переводами
+    if refined_translation_segments_dict:
+        for method, refined_translated_segs in refined_translation_segments_dict.items():
+            logger.info(f"  Создание документа с улучшенным переводом ({method})...")
+
+            docx_path_trans_refined, md_path_trans_refined = writer.create_from_segments(
+                title=f"{text_title}_translated_{method}_refined",
+                transcription_segments=refined_segments if refined_segments else original_segments,
+                translation_segments=refined_translated_segs,
+                transcribe_method=f"Loaded from {text_path_obj.suffix}" + (f" + {refine_model}" if refine_model else ""),
+                translate_method=f"{method} + {refine_translation_model}",
+                with_timestamps=False
+            )
+            logger.info(f"  ✅ Улучшенный перевод: {md_path_trans_refined}")
 
     # Если ничего не создали, выводим предупреждение
     if not refined_segments and not translated_segments_dict:
@@ -485,6 +514,12 @@ def process_youtube_video(
         # Используем первый метод перевода (в MVP)
         translate_method = translate_methods[0]
 
+        # Формируем строку метода перевода с указанием модели NLLB
+        if translate_model and translate_method == "NLLB":
+            translate_method_str = f"{translate_method} ({translate_model})"
+        else:
+            translate_method_str = translate_method
+
         from .translator import Translator
 
         if source_lang == "en":
@@ -572,7 +607,7 @@ def process_youtube_video(
 
         # Если есть улучшенный перевод, создаем дополнительный документ
         if translation_segments_refined_llm:
-            logger.info("Соз��ание документа с улучшенным переводом...")
+            logger.info("Создание документа с улучшенным переводом...")
             docx_path_trans_refined, md_path_trans_refined = writer.create_from_segments(
                 title=f"{video_title} (translated refined)",
                 transcription_segments=refined_transcription_segments if refined_transcription_segments else original_transcription_segments,
@@ -583,7 +618,7 @@ def process_youtube_video(
             )
 
             logger.info("\n" + "=" * 60)
-            logger.info("Обрабо��ка завершена успешно!")
+            logger.info("Обработка завершена успешно!")
             logger.info(f"Результаты сохранены:")
             logger.info(f"\nОригинальная версия:")
             logger.info(f"  - {docx_path_orig}")
@@ -750,9 +785,13 @@ def process_local_audio(
         source_lang = detect_language(original_text)
 
         # Используем первый метод перевода (в MVP)
-
         translate_method = translate_methods[0]
-        translate_method_str = translate_method
+
+        # Формируем строку метода перевода с указанием модели NLLB
+        if translate_model and translate_method == "NLLB":
+            translate_method_str = f"{translate_method} ({translate_model})"
+        else:
+            translate_method_str = translate_method
 
         from .translator import Translator
 
