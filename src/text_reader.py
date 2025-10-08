@@ -76,7 +76,7 @@ class TextReader:
                 if text:
                     paragraphs.append(text)
 
-            full_text = '\n'.join(paragraphs)
+            full_text = '\n\n'.join(paragraphs)
 
             logger.info(f"Прочитано {len(paragraphs)} параграфов, {len(full_text)} символов")
 
