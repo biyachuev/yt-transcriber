@@ -3,6 +3,7 @@ import pytest
 from pathlib import Path
 import tempfile
 import shutil
+from unittest.mock import patch, MagicMock
 from src.document_writer import DocumentWriter
 from src.transcriber import TranscriptionSegment
 
@@ -42,8 +43,14 @@ class TestDocumentWriter:
         assert docx_path.suffix == '.docx'
         assert md_path.suffix == '.md'
 
-    def test_create_from_segments(self, writer, temp_output_dir):
+    @patch('src.transcriber.Transcriber')
+    def test_create_from_segments(self, mock_transcriber_class, writer, temp_output_dir):
         """Test creating documents from segments"""
+        # Mock Transcriber to avoid heavy imports
+        mock_transcriber = MagicMock()
+        mock_transcriber.segments_to_text.return_value = "First segment Second segment"
+        mock_transcriber_class.return_value = mock_transcriber
+
         title = "Segments Test"
         segments = [
             TranscriptionSegment(0, 5, "First segment"),
@@ -59,3 +66,4 @@ class TestDocumentWriter:
 
         assert docx_path.exists()
         assert md_path.exists()
+        mock_transcriber.segments_to_text.assert_called_once()

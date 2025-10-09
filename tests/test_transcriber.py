@@ -2,6 +2,7 @@
 Тесты для модуля transcriber
 """
 import pytest
+from unittest.mock import patch, MagicMock
 from src.transcriber import TranscriptionSegment, Transcriber
 from src.config import TranscribeOptions
 
@@ -61,62 +62,82 @@ class TestTranscriptionSegment:
 
 class TestTranscriber:
     """Тесты для класса Transcriber"""
-    
-    def test_transcriber_initialization(self):
+
+    @patch('src.transcriber.torch')
+    @patch('src.transcriber.whisper')
+    def test_transcriber_initialization(self, mock_whisper, mock_torch):
         """Проверка инициализации транскрайбера"""
+        mock_torch.cuda.is_available.return_value = False
+        mock_torch.backends.mps.is_available.return_value = False
+
         transcriber = Transcriber(method=TranscribeOptions.WHISPER_BASE)
-        
+
         assert transcriber.method == TranscribeOptions.WHISPER_BASE
         assert transcriber.model is None  # Модель загружается по требованию
         assert transcriber.device in ['cpu', 'cuda', 'mps']
-    
-    def test_segments_to_text(self):
+
+    @patch('src.transcriber.torch')
+    @patch('src.transcriber.whisper')
+    def test_segments_to_text(self, mock_whisper, mock_torch):
         """Проверка преобразования сегментов в текст"""
+        mock_torch.cuda.is_available.return_value = False
+        mock_torch.backends.mps.is_available.return_value = False
+
         transcriber = Transcriber()
-        
+
         segments = [
             TranscriptionSegment(0, 5, "First segment"),
             TranscriptionSegment(5, 10, "Second segment"),
             TranscriptionSegment(10, 15, "Third segment")
         ]
-        
+
         result = transcriber.segments_to_text(segments)
-        
+
         assert "First segment" in result
         assert "Second segment" in result
         assert "Third segment" in result
         assert result.count("\n\n") == 2  # Два разделителя между тремя сегментами
-    
-    def test_segments_to_text_with_timestamps(self):
+
+    @patch('src.transcriber.torch')
+    @patch('src.transcriber.whisper')
+    def test_segments_to_text_with_timestamps(self, mock_whisper, mock_torch):
         """Проверка преобразования сегментов в текст с таймкодами"""
+        mock_torch.cuda.is_available.return_value = False
+        mock_torch.backends.mps.is_available.return_value = False
+
         transcriber = Transcriber()
-        
+
         segments = [
             TranscriptionSegment(0, 5, "First"),
             TranscriptionSegment(65, 70, "Second")
         ]
-        
+
         result = transcriber.segments_to_text_with_timestamps(segments)
-        
+
         assert "[00:00]" in result
         assert "[01:05]" in result
         assert "First" in result
         assert "Second" in result
-    
-    def test_segments_to_text_with_timestamps_and_speakers(self):
+
+    @patch('src.transcriber.torch')
+    @patch('src.transcriber.whisper')
+    def test_segments_to_text_with_timestamps_and_speakers(self, mock_whisper, mock_torch):
         """Проверка преобразования с таймкодами и спикерами"""
+        mock_torch.cuda.is_available.return_value = False
+        mock_torch.backends.mps.is_available.return_value = False
+
         transcriber = Transcriber()
-        
+
         segments = [
             TranscriptionSegment(0, 5, "Hello", speaker="Speaker 1"),
             TranscriptionSegment(5, 10, "Hi", speaker="Speaker 2")
         ]
-        
+
         result = transcriber.segments_to_text_with_timestamps(
             segments,
             with_speakers=True
         )
-        
+
         assert "[Speaker 1]" in result
         assert "[Speaker 2]" in result
         assert "[00:00]" in result
