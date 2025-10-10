@@ -7,25 +7,38 @@ import json
 from tqdm import tqdm
 
 from .logger import logger
+from .config import RefineOptions, settings
 
 
 class TextRefiner:
-    """Класс для улучшения текста транскрипции с помощью локальной LLM через Ollama"""
+    """Класс для улучшения текста транскрипции с помощью LLM (Ollama или OpenAI)"""
 
-    def __init__(self, model_name: str = "qwen2.5:3b", ollama_url: str = "http://localhost:11434"):
+    def __init__(
+        self,
+        backend: str = RefineOptions.OLLAMA,
+        model_name: str = "qwen2.5:3b",
+        ollama_url: str = "http://localhost:11434"
+    ):
         """
         Инициализация
 
         Args:
-            model_name: Название модели в Ollama
-            ollama_url: URL сервера Ollama
+            backend: Backend для улучшения (ollama или openai_api)
+            model_name: Название модели (для Ollama или OpenAI, например gpt-4, gpt-3.5-turbo)
+            ollama_url: URL сервера Ollama (только для Ollama backend)
         """
+        self.backend = backend
         self.model_name = model_name
         self.ollama_url = ollama_url
         self.api_endpoint = f"{ollama_url}/api/generate"
 
-        # Проверяем доступность Ollama
-        self._check_ollama_available()
+        # Проверяем доступность бэкенда
+        if self.backend == RefineOptions.OLLAMA:
+            self._check_ollama_available()
+        elif self.backend == RefineOptions.OPENAI_API:
+            self._check_openai_available()
+        else:
+            raise ValueError(f"Unsupported refinement backend: {self.backend}")
 
     def _check_ollama_available(self):
         """Проверка доступности Ollama сервера"""
@@ -80,6 +93,35 @@ class TextRefiner:
 
             logger.error(error_msg)
             raise RuntimeError(f"Не удалось подключиться к Ollama: {e}")
+
+    def _check_openai_available(self):
+        """Проверка доступности OpenAI API"""
+        api_key = settings.OPENAI_API_KEY
+        if not api_key:
+            error_msg = f"\n{'='*60}\n"
+            error_msg += f"❌ ОШИБКА: OPENAI_API_KEY не найден\n"
+            error_msg += f"{'='*60}\n\n"
+            error_msg += f"Для использования OpenAI API необходимо:\n"
+            error_msg += f"1. Получить API ключ на https://platform.openai.com/api-keys\n"
+            error_msg += f"2. Добавить его в .env файл:\n"
+            error_msg += f"   OPENAI_API_KEY=your-api-key-here\n"
+            error_msg += f"{'='*60}"
+
+            logger.error(error_msg)
+            raise ValueError("OPENAI_API_KEY not found in environment variables")
+
+        try:
+            from openai import OpenAI
+            # Quick validation check
+            client = OpenAI(api_key=api_key)
+            logger.info("OpenAI API доступен")
+        except ImportError:
+            raise ImportError(
+                "OpenAI library not installed. Install it with: pip install openai>=1.6.0"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при проверке OpenAI API: {e}")
+            raise
 
     def _split_text_into_chunks(self, text: str, max_chunk_size: int = 2000) -> List[str]:
         """
@@ -137,7 +179,7 @@ class TextRefiner:
             "prompt": prompt,
             "stream": False,
             "options": {
-                "temperature": 0.1,  # Очень низкая температура
+                "temperature": 0.0,  # Минимальная температура для максимальной точности
                 "top_p": 0.9,
                 "num_predict": 1000,  # Ограничение длины ответа
                 "stop": ["###", "RAW TRANSCRIPTION:", "EXAMPLE"]  # Стоп-последовательности для предотвращения переобъяснений
@@ -156,6 +198,40 @@ class TextRefiner:
             return result.get('response', '').strip()
         except Exception as e:
             logger.error(f"Ошибка при вызове Ollama: {e}")
+            raise
+
+    def _call_openai(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+        """
+        Вызов OpenAI API
+
+        Args:
+            prompt: Промпт для модели
+            system_prompt: Системный промпт (опционально)
+
+        Returns:
+            Ответ модели
+        """
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            response = client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.0,
+                max_tokens=4000,
+            )
+
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            logger.error(f"Ошибка при вызове OpenAI API: {e}")
             raise
 
     def _detect_topic(self, text_sample: str) -> str:
@@ -209,6 +285,52 @@ class TextRefiner:
         # Если больше 30% кириллицы - считаем русским
         return 'ru' if (cyrillic_chars / total_chars) > 0.3 else 'en'
 
+    def _group_lines_into_paragraphs(self, text: str, min_paragraph_length: int = 400) -> str:
+        """
+        Группирует короткие строки в абзацы
+
+        Args:
+            text: Текст для обработки
+            min_paragraph_length: Минимальная длина абзаца в символах
+
+        Returns:
+            Текст с объединенными абзацами
+        """
+        lines = text.split('\n')
+        paragraphs = []
+        current_paragraph = []
+        current_length = 0
+
+        for line in lines:
+            line = line.strip()
+
+            # Пустая строка - может быть границей, но только если текущий абзац достаточно длинный
+            if not line:
+                if current_paragraph and current_length >= min_paragraph_length:
+                    paragraphs.append(' '.join(current_paragraph))
+                    current_paragraph = []
+                    current_length = 0
+                # Если абзац короткий - игнорируем пустую строку и продолжаем накапливать
+                continue
+
+            # Добавляем строку к текущему абзацу
+            current_paragraph.append(line)
+            current_length += len(line)
+
+            # Если абзац достиг минимальной длины и строка заканчивается на точку
+            # это хорошее место для завершения абзаца
+            if current_length >= min_paragraph_length and line and line[-1] in '.!?':
+                paragraphs.append(' '.join(current_paragraph))
+                current_paragraph = []
+                current_length = 0
+
+        # Добавляем последний абзац
+        if current_paragraph:
+            paragraphs.append(' '.join(current_paragraph))
+
+        # Объединяем абзацы через двойной перенос строки
+        return '\n\n'.join(paragraphs)
+
     def refine_chunk(self, chunk: str, context: Optional[str] = None, topic: Optional[str] = None, language: Optional[str] = None) -> str:
         """
         Улучшение одного чанка текста
@@ -239,7 +361,22 @@ class TextRefiner:
 2. Явные заикания: "в в", "я-я-я"
 3. Метакомментарии о процессе записи: "сейчас открою экран", "секунду", "вот так", "давайте", "смотрите"
 
-ОБЯЗАТЕЛЬНО СОХРАНЯЙТЕ ВСЁ ОСТАЛЬНОЕ - НЕ УДАЛЯЙТЕ:
+ФОРМАТИРОВАНИЕ АБЗАЦЕВ - КРИТИЧЕСКИ ВАЖНО:
+- Входной текст может быть разбит построчно - ОБЪЕДИНИТЕ связанные строки в абзацы
+- Группируйте связанные предложения в абзацы (3-7 предложений на абзац)
+- Между абзацами ОБЯЗАТЕЛЬНО вставляйте пустую строку (двойной \n\n)
+- НЕ оставляйте каждое предложение на отдельной строке
+- НЕ делайте один огромный абзац - разбивайте на смысловые части
+- Если тема меняется - начинайте новый абзац
+
+КРИТИЧЕСКИ ВАЖНО - СОХРАНЯЙТЕ СМЫСЛ ТОЧНО:
+- НЕ МЕНЯЙТЕ смысл предложений ни в коем случае
+- НЕ ИСПРАВЛЯЙТЕ отрицания: если написано "НЕ", это НЕ ошибка
+- НЕ УЛУЧШАЙТЕ логику - говорящий мог сказать что-то парадоксальное или противоречивое, это НОРМАЛЬНО
+- НЕ УПРОЩАЙТЕ сложные конструкции, если это изменит смысл
+- Если фраза кажется странной или нелогичной - оставьте КАК ЕСТЬ, это речь говорящего
+
+ОБЯЗАТЕЛЬНО СОХРАНЯЙТЕ ВСЁ ОСТАЛЬНОЕ - НЕ УДАЛЯЙТЕ И НЕ МЕНЯЙТЕ:
 - Каждое предложение, даже если кажется повторяющимся
 - ВСЕ примеры: "если у тебя рейтинг выше 2650 и ты играешь с 1800 или 1700"
 - ВСЕ цифры и рейтинги
@@ -247,6 +384,7 @@ class TextRefiner:
 - ВСЕ мнения и мысли
 - Повторяющиеся утверждения (говорящий может специально подчёркивать)
 - Фразы вроде "я расскажу об этом позже" или "извините если..."
+- ВСЕ отрицания и частицы "НЕ" - это часть смысла!
 
 ФОРМАТИРОВАНИЕ:
 - Исправляйте ошибки распознавания: "фиде" → "ФИДЕ", "епл" → "Apple"
@@ -254,14 +392,55 @@ class TextRefiner:
 - Исправляйте пунктуацию
 - Объединяйте фрагменты предложений
 
-КРИТИЧНО: Ваша ЕДИНСТВЕННАЯ задача — удалить слова-паразиты и исправить форматирование. Если вы удалите ЛЮБОЙ содержательный контент, примеры или рассуждения, вы провалите задачу.
+КРИТИЧНО: Ваша ЕДИНСТВЕННАЯ задача — удалить слова-паразиты и исправить форматирование. Если вы удалите ЛЮБОЙ содержательный контент, примеры или рассуждения, вы провалите задачу. Если вы ИЗМЕНИТЕ смысл (особенно отрицания), вы провалите задачу.
 
 Возвращайте ТОЛЬКО очищенный текст.
 
-ПРИМЕР:
-ИСХОДНЫЙ: "Слушайте ребят ну вот э-э значит главная новость о которой все хотели чтобы я рассказал ну я щас об этом расскажу короче вот прямо сейчас так. Давайте сразу к делу. Ну вот это вот что началось началось вся эта драма главная тема последних суток которая началась вчера с этого твита от Эмиля Сутовского который э-э я думаю сейчас гендир фиде ну то есть главной шахматной организации."
+ПРИМЕРЫ:
 
-ИСПРАВЛЕННЫЙ: "Главная новость, о которой все хотели чтобы я рассказал, я расскажу об этом прямо сейчас. Сразу к делу. Это то, что началось, вся эта драма, главная тема последних суток, которая началась вчера с этого твита от Эмиля Сутовского, который, я думаю, сейчас генеральный директор ФИДЕ, то есть главной шахматной организации."
+ПРИМЕР 1 (группировка построчного текста в абзацы - КРИТИЧНО ВАЖНО):
+ИСХОДНЫЙ (построчный формат - НЕПРАВИЛЬНО):
+"Слушайте ребят ну главная новость
+
+о которой все хотели чтобы я рассказал
+
+я щас об этом расскажу короче прямо сейчас
+
+Давайте сразу к делу
+
+это вот что началось
+
+вся эта драма главная тема последних суток
+
+которая началась вчера с твита от Эмиля Сутовского
+
+который я думаю сейчас гендир фиде
+
+ну то есть главной шахматной организации
+
+Ну вот смотрите он написал
+
+что больше не будет фарминга короче
+
+то есть если вы игрок с рейтингом выше 2650
+
+прошу доказывайте своё мастерство
+
+против соперников сопоставимой силы"
+
+ИСПРАВЛЕННЫЙ (сгруппировано в абзацы - ПРАВИЛЬНО):
+"Главная новость, о которой все хотели чтобы я рассказал, я расскажу об этом прямо сейчас. Сразу к делу. Это то, что началось, вся эта драма, главная тема последних суток, которая началась вчера с твита от Эмиля Сутовского, который, я думаю, сейчас генеральный директор ФИДЕ, то есть главной шахматной организации.
+
+Он написал, что больше не будет фарминга. То есть если вы игрок с рейтингом выше 2650, прошу доказывайте своё мастерство против соперников сопоставимой силы."
+
+ОБРАТИТЕ ВНИМАНИЕ: Связанные предложения объединены в абзацы. Пустая строка между абзацами!
+
+ПРИМЕР 2 (сохранение отрицаний - КРИТИЧНО):
+ИСХОДНЫЙ: "Искусственный интеллект ну вот поменяет вообще людей значит. Пишут что искусственный интеллект используют как психолога и он ну доводит людей не до того до чего они хотели дойти короче."
+
+ИСПРАВЛЕННЫЙ: "Искусственный интеллект поменяет вообще людей. Пишут, что искусственный интеллект используют как психолога, и он доводит людей НЕ до того, до чего они хотели дойти."
+
+ОБРАТИТЕ ВНИМАНИЕ: В примере 2 сохранено отрицание "НЕ до того" - это смысл высказывания!
 
 ---
 
@@ -276,7 +455,22 @@ REMOVE ONLY:
 2. Obvious stutters: "the the", "I-I-I"
 3. Meta-commentary about the recording process: "let me resize", "I'll scroll", "there we go", "here we go", "let me adjust this"
 
-KEEP ABSOLUTELY EVERYTHING ELSE - DO NOT REMOVE:
+PARAGRAPH FORMATTING - CRITICALLY IMPORTANT:
+- Input text may be split line-by-line - COMBINE related lines into paragraphs
+- Group related sentences into paragraphs (3-7 sentences per paragraph)
+- Between paragraphs MUST insert a blank line (double \n\n)
+- DO NOT leave each sentence on a separate line
+- DO NOT make one huge paragraph - split into logical parts
+- If the topic changes - start a new paragraph
+
+CRITICALLY IMPORTANT - PRESERVE EXACT MEANING:
+- DO NOT change the meaning of sentences under any circumstances
+- DO NOT "fix" negations: if it says "NOT", that's NOT an error
+- DO NOT improve logic - the speaker may have said something paradoxical or contradictory, that's NORMAL
+- DO NOT simplify complex constructions if it changes meaning
+- If a phrase seems strange or illogical - leave it AS IS, it's the speaker's speech
+
+KEEP ABSOLUTELY EVERYTHING ELSE - DO NOT REMOVE OR CHANGE:
 - Every sentence, even if it seems repetitive
 - ALL examples: "if you're above 2650 and play someone like 1800 or 1700"
 - ALL numbers and ratings
@@ -284,6 +478,7 @@ KEEP ABSOLUTELY EVERYTHING ELSE - DO NOT REMOVE:
 - ALL opinions and thoughts
 - Repetitive statements (the speaker may be emphasizing)
 - Phrases like "I'll talk about this later" or "I apologize if..."
+- ALL negations and words like "NOT" - they are part of the meaning!
 
 FORMATTING:
 - Fix speech recognition errors: "feed it" → "FIDE", "feeding" → "FIDE"
@@ -291,16 +486,55 @@ FORMATTING:
 - Clean up punctuation
 - Combine sentence fragments
 
-CRITICAL: Your ONLY job is to remove filler words and fix formatting. If you delete ANY substantive content, examples, or reasoning, you fail.
+CRITICAL: Your ONLY job is to remove filler words and fix formatting. If you delete ANY substantive content, examples, or reasoning, you fail. If you CHANGE the meaning (especially negations), you fail.
 
 Return ONLY the cleaned text.
 
-EXAMPLE:
-RAW: "All right, you guys, so the big news that everybody's been wanting me to talk about, I will talk about it right now. And let's dive right into the meat. So here we go. This is what kicked off the kicked off all the drama, the big topic of the last 24 hours that began yesterday with this tweet from Emil Sotovsky, who I believe is currently the feed it the CEO of FIDE, the governing body of chess. So this was the tweet. And the tweet says, no more farming. If you're a 2650 plus player, please, or if you're a 2650 plus player, do prove your skill versus opponents of comparable strength. Why 2650 plus?"
+EXAMPLES:
 
-CORRECTED: "The big news everyone's been wanting me to discuss—I'll talk about it right now. Let's dive right into the meat. This is what kicked off all the drama, the big topic of the last 24 hours that began yesterday with this tweet from Emil Sotovsky, who I believe is currently the CEO of FIDE, the governing body of chess.
+EXAMPLE 1 (grouping line-by-line text into paragraphs - CRITICALLY IMPORTANT):
+RAW (line-by-line format - WRONG):
+"All right you guys the big news
 
-The tweet says: "No more farming. If you're a 2650+ player, please prove your skill versus opponents of comparable strength. Why 2650+?""
+that everybody's been wanting me to talk about
+
+I will talk about it right now
+
+let's dive right into the meat
+
+this is what kicked off all the drama
+
+the big topic of the last 24 hours
+
+that began yesterday with this tweet from Emil Sotovsky
+
+who I believe is currently the CEO of FIDE
+
+the governing body of chess
+
+So this was the tweet
+
+and the tweet says no more farming
+
+if you're a 2650 plus player
+
+please prove your skill
+
+versus opponents of comparable strength"
+
+CORRECTED (grouped into paragraphs - CORRECT):
+"The big news everyone's been wanting me to discuss—I'll talk about it right now. Let's dive right into the meat. This is what kicked off all the drama, the big topic of the last 24 hours that began yesterday with this tweet from Emil Sotovsky, who I believe is currently the CEO of FIDE, the governing body of chess.
+
+This was the tweet, and the tweet says: no more farming. If you're a 2650+ player, please prove your skill versus opponents of comparable strength."
+
+NOTICE: Related sentences are combined into paragraphs. Blank line between paragraphs!
+
+EXAMPLE 2 (preserving negations - CRITICAL):
+RAW: "Um, you know, artificial intelligence will, like, basically change people entirely. They write that, uh, artificial intelligence is used as a psychologist, and it, well, leads people NOT to where they wanted to go, you know."
+
+CORRECTED: "Artificial intelligence will change people entirely. They write that artificial intelligence is used as a psychologist, and it leads people NOT to where they wanted to go."
+
+NOTE: In example 2, the negation "NOT to where" is preserved - that's the speaker's intended meaning!
 
 ---
 
@@ -310,7 +544,11 @@ Now clean this text. Return ONLY the cleaned text:
 
 
         try:
-            refined_text = self._call_ollama(prompt)
+            # Call the appropriate backend
+            if self.backend == RefineOptions.OPENAI_API:
+                refined_text = self._call_openai(prompt)
+            else:
+                refined_text = self._call_ollama(prompt)
 
             # Очистка ответа от артефактов
             # Удаляем thinking tags если есть
@@ -333,13 +571,16 @@ Now clean this text. Return ONLY the cleaned text:
             # Если после очистки текст стал слишком коротким - вернуть оригинал
             if len(refined_text.strip()) < len(chunk) * 0.3:
                 logger.warning("Улучшенный текст слишком короткий, возвращаю оригинал")
-                return chunk
+                return self._group_lines_into_paragraphs(chunk).strip()
+
+            # Post-processing: группируем короткие строки в абзацы
+            refined_text = self._group_lines_into_paragraphs(refined_text)
 
             return refined_text.strip()
         except Exception as e:
             logger.error(f"Ошибка при улучшении чанка: {e}")
-            # В случае ошибки возвращаем оригинал
-            return chunk
+            # В случае ошибки возвращаем оригинал (но сгруппированный по абзацам)
+            return self._group_lines_into_paragraphs(chunk).strip()
 
     def refine_text(self, text: str, context: Optional[str] = None) -> str:
         """

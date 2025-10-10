@@ -25,6 +25,7 @@ venv/
 ENV/
 env/
 .venv
+.license-env/
 
 # IDE
 .vscode/
@@ -53,6 +54,8 @@ models/
 !FAQ.md
 !PROJECT_SUMMARY.md
 !QUICKSTART.md
+!THIRD_PARTY_LICENSES.md
+!OPENAI_INTEGRATION.md
 .claude/
 
 # Environment variables

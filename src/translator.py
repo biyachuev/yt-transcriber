@@ -1,11 +1,10 @@
 """
-Модуль для перевода текста
+Text translation utilities (Meta NLLB and future backends).
 """
 from typing import List, Optional
-from pathlib import Path
-from tqdm import tqdm
-import re
+
 import torch
+from tqdm import tqdm
 
 from .config import settings, TranslateOptions
 from .logger import logger
@@ -13,7 +12,7 @@ from .utils import chunk_text, detect_language
 
 
 class Translator:
-    """Класс для перевода текста"""
+    """Translate text using the configured backend (NLLB by default)."""
 
     def __init__(self, method: str = TranslateOptions.NLLB, model_name: Optional[str] = None):
         self.method = method
@@ -22,247 +21,288 @@ class Translator:
         self.tokenizer = None
         self.pipeline = None
         self.device = self._get_device()
-        logger.info(f"Переводчик использует устройство: {self.device}")
+        logger.info("Translator using device: %s", self.device)
         if model_name:
-            logger.info(f"Используется пользовательская модель NLLB: {model_name}")
-    
+            logger.info("Custom NLLB model specified: %s", model_name)
+
     def _get_device(self) -> str:
-        """Определение доступного устройства"""
+        """Pick the best available device."""
         if torch.cuda.is_available():
             return "cuda"
-        elif torch.backends.mps.is_available():
+        if torch.backends.mps.is_available():
             return "mps"
-        else:
-            return "cpu"
-    
+        return "cpu"
+
     def _load_nllb_model(self):
-        """Загрузка модели NLLB"""
+        """Lazy-load the NLLB model and tokenizer."""
         if self.model is not None:
             return
 
-        # Ленивый импорт transformers
         from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-        logger.info(f"Загрузка модели NLLB: {self.model_name}")
+        logger.info("Loading NLLB model: %s", self.model_name)
+        logger.info("Initial download may take a few minutes...")
 
-        logger.info("Это может занять несколько минут при первом запуске...")
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_name,
-            cache_dir=str(settings.NLLB_MODEL_DIR)
+            cache_dir=str(settings.NLLB_MODEL_DIR),
         )
 
         self.model = AutoModelForSeq2SeqLM.from_pretrained(
             self.model_name,
-            cache_dir=str(settings.NLLB_MODEL_DIR)
+            cache_dir=str(settings.NLLB_MODEL_DIR),
         )
-        
-        # Перемещаем модель на нужное устройство
+
         if self.device != "cpu":
             self.model = self.model.to(self.device)
-        
-        logger.info("Модель NLLB загружена успешно")
-    
+
+        logger.info("NLLB model loaded successfully")
+
     def _get_nllb_language_code(self, lang: str) -> str:
         """
-        Преобразование кода языка в формат NLLB
-        
+        Map a language code to the NLLB representation.
+
         Args:
-            lang: Код языка ('ru' или 'en')
-            
+            lang: Language code ('ru' or 'en').
+
         Returns:
-            Код языка для NLLB
+            NLLB-compatible code.
         """
-        mapping = {
-            'ru': 'rus_Cyrl',
-            'en': 'eng_Latn'
-        }
-        return mapping.get(lang, 'eng_Latn')
-    
+        mapping = {"ru": "rus_Cyrl", "en": "eng_Latn"}
+        return mapping.get(lang, "eng_Latn")
+
     def translate_text(
         self,
         text: str,
         source_lang: Optional[str] = None,
-        target_lang: str = "ru"
+        target_lang: str = "ru",
     ) -> str:
         """
-        Перевод текста
-        
+        Translate text into the target language.
+
         Args:
-            text: Текст для перевода
-            source_lang: Исходный язык (None для автоопределения)
-            target_lang: Целевой язык
-            
+            text: Input text to translate.
+            source_lang: Source language code. Auto-detected if None.
+            target_lang: Target language code.
+
         Returns:
-            Переведенный текст
+            Translated text.
         """
         if not text.strip():
             return text
-        
-        # Определяем исходный язык если не задан
+
         if source_lang is None:
             source_lang = detect_language(text)
-            logger.info(f"Определен исходный язык: {source_lang}")
-        
-        # Если исходный язык = целевому, возвращаем оригинал
+            logger.info("Detected source language: %s", source_lang)
+
         if source_lang == target_lang:
-            logger.info("Исходный язык совпадает с целевым, перевод не требуется")
+            logger.info("Source and target language match; skipping translation")
             return text
-        
-        logger.info(f"Начало перевода с {source_lang} на {target_lang}")
-        
+
+        logger.info("Translating from %s to %s", source_lang, target_lang)
+
         if self.method == TranslateOptions.NLLB:
             return self._translate_with_nllb(text, source_lang, target_lang)
-        elif self.method == TranslateOptions.OPENAI_API:
+        if self.method == TranslateOptions.OPENAI_API:
             return self._translate_with_openai(text, source_lang, target_lang)
-        else:
-            raise ValueError(f"Неподдерживаемый метод перевода: {self.method}")
-    
+
+        raise ValueError(f"Unsupported translation method: {self.method}")
+
     def _translate_with_nllb(
         self,
         text: str,
         source_lang: str,
-        target_lang: str
+        target_lang: str,
     ) -> str:
         """
-        Перевод с использованием NLLB
-    
+        Translate using Meta's NLLB model.
+
         Args:
-            text: Текст для перевода
-            source_lang: Исходный язык
-            target_lang: Целевой язык
-        
+            text: Text to translate.
+            source_lang: Source language code.
+            target_lang: Target language code.
+
         Returns:
-            Переведенный текст
+            Translated text.
         """
         self._load_nllb_model()
 
-        # Разбиваем текст на чанки для обработки
-        # 700 токенов - компромисс между качеством (больше контекста) и скоростью
         chunks = chunk_text(text, max_tokens=700)
-        logger.info(f"Текст разбит на {len(chunks)} частей для перевода")
-    
-        translated_chunks = []
-    
+        logger.info("Split text into %d chunks for translation", len(chunks))
+
+        translated_chunks: List[str] = []
+
         src_lang_code = self._get_nllb_language_code(source_lang)
         tgt_lang_code = self._get_nllb_language_code(target_lang)
-    
-        for chunk in tqdm(chunks, desc="Перевод"):
-            # Устанавливаем исходный язык
+
+        for chunk in tqdm(chunks, desc="Translating chunks"):
             self.tokenizer.src_lang = src_lang_code
-        
-            # Токенизация
+
             inputs = self.tokenizer(
                 chunk,
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-                max_length=1024
+                max_length=1024,
             )
-        
-            # Перемещаем на устройство
+
             if self.device != "cpu":
                 inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        
-            # Получаем ID токена для целевого языка
-            # ИСПРАВЛЕНИЕ: используем правильный метод
+
             forced_bos_token_id = self.tokenizer.convert_tokens_to_ids(tgt_lang_code)
-        
-            # Генерация перевода
+
             translated_tokens = self.model.generate(
                 **inputs,
                 forced_bos_token_id=forced_bos_token_id,
-                max_length=1024,           # Увеличено для больших чанков
-                num_beams=5,               # Beam search для качества
+                max_length=1024,
+                num_beams=5,
                 early_stopping=True,
-                no_repeat_ngram_size=3     # Избегаем повторяющихся фраз
+                no_repeat_ngram_size=3,
             )
-        
-            # Декодирование
+
             translated_text = self.tokenizer.batch_decode(
                 translated_tokens,
-                skip_special_tokens=True
+                skip_special_tokens=True,
             )[0]
-        
+
             translated_chunks.append(translated_text)
-    
-        result = '\n\n'.join(translated_chunks)
-        logger.info("Перевод завершен успешно")
-    
+
+        result = "\n\n".join(translated_chunks)
+        logger.info("Translation completed successfully")
+
         return result
-    
+
     def _translate_with_openai(
         self,
         text: str,
         source_lang: str,
-        target_lang: str
+        target_lang: str,
     ) -> str:
         """
-        Перевод с использованием OpenAI API (для расширенной версии)
-        
+        Translate using OpenAI's GPT models.
+
         Args:
-            text: Текст для перевода
-            source_lang: Исходный язык
-            target_lang: Целевой язык
-            
+            text: Text to translate.
+            source_lang: Source language code.
+            target_lang: Target language code.
+
         Returns:
-            Переведенный текст
+            Translated text.
         """
-        logger.warning("OpenAI API перевод будет доступен в расширенной версии")
-        
-        # Заглушка для MVP
-        return text
-    
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError(
+                "OpenAI library not installed. Install it with: pip install openai>=1.6.0"
+            )
+
+        api_key = settings.OPENAI_API_KEY
+        if not api_key:
+            raise ValueError(
+                "OPENAI_API_KEY not found in environment variables. "
+                "Please set it in your .env file or environment."
+            )
+
+        logger.info("Using OpenAI API for translation")
+        client = OpenAI(api_key=api_key)
+
+        # Map language codes to full names
+        lang_names = {
+            "ru": "Russian",
+            "en": "English",
+        }
+
+        source_lang_name = lang_names.get(source_lang, source_lang)
+        target_lang_name = lang_names.get(target_lang, target_lang)
+
+        # Split text into chunks (GPT has token limits)
+        chunks = chunk_text(text, max_tokens=2000)
+        logger.info("Split text into %d chunks for translation", len(chunks))
+
+        translated_chunks: List[str] = []
+
+        system_prompt = f"""You are a professional translator. Translate the following text from {source_lang_name} to {target_lang_name}.
+
+IMPORTANT RULES:
+1. Preserve all timestamps in format [MM:SS] or [HH:MM:SS]
+2. Preserve all speaker labels like [Speaker 1], [Speaker 2]
+3. Maintain paragraph structure and formatting
+4. Translate accurately while keeping the tone and style
+5. Keep technical terms accurate
+6. Do NOT add explanations or comments
+7. Return ONLY the translated text"""
+
+        for chunk in tqdm(chunks, desc="Translating chunks"):
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4",  # Can be configured
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": chunk}
+                    ],
+                    temperature=0.3,
+                    max_tokens=3000,
+                )
+
+                translated_text = response.choices[0].message.content.strip()
+                translated_chunks.append(translated_text)
+
+            except Exception as e:
+                logger.error(f"Error translating chunk: {e}")
+                # Fall back to original text on error
+                translated_chunks.append(chunk)
+
+        result = "\n\n".join(translated_chunks)
+        logger.info("Translation completed successfully")
+
+        return result
+
     def translate_segments(
         self,
         segments: List,
         source_lang: Optional[str] = None,
-        target_lang: str = "ru"
+        target_lang: str = "ru",
     ) -> List:
         """
-        Перевод списка сегментов транскрипции
+        Translate a list of transcription segments.
 
         Args:
-            segments: Список объектов TranscriptionSegment
-            source_lang: Исходный язык
-            target_lang: Целевой язык
+            segments: Iterable of TranscriptionSegment objects or dictionaries.
+            source_lang: Source language code.
+            target_lang: Target language code.
 
         Returns:
-            Список переведенных сегментов
+            List of translated TranscriptionSegment instances.
         """
         from .transcriber import TranscriptionSegment
-        from tqdm import tqdm
 
-        logger.info(f"Перевод {len(segments)} сегментов...")
+        logger.info("Translating %d segments...", len(segments))
 
-        # Переводим каждый сегмент отдельно, чтобы избежать проблем с разделителями
-        translated_segments = []
+        translated_segments: List[TranscriptionSegment] = []
 
-        for seg in tqdm(segments, desc="Перевод сегментов"):
-            # Поддерживаем как объекты, так и словари
-            if hasattr(seg, 'text'):
+        for seg in tqdm(segments, desc="Translating segments"):
+            if hasattr(seg, "text"):
                 seg_text = seg.text
                 seg_start = seg.start
                 seg_end = seg.end
                 seg_speaker = seg.speaker
             elif isinstance(seg, dict):
-                seg_text = seg.get('text', '')
-                seg_start = seg.get('start')
-                seg_end = seg.get('end')
-                seg_speaker = seg.get('speaker')
+                seg_text = seg.get("text", "")
+                seg_start = seg.get("start")
+                seg_end = seg.get("end")
+                seg_speaker = seg.get("speaker")
             else:
                 continue
 
-            # Переводим текст сегмента
             translated_text = self.translate_text(seg_text, source_lang, target_lang)
 
-            # Создаем новый сегмент с переведенным текстом
             translated_seg = TranscriptionSegment(
                 start=seg_start,
                 end=seg_end,
                 text=translated_text,
-                speaker=seg_speaker
+                speaker=seg_speaker,
             )
             translated_segments.append(translated_seg)
 
-        logger.info("Перевод сегментов завершен")
+        logger.info("Segment translation finished")
         return translated_segments

@@ -1,5 +1,5 @@
 """
-Конфигурация приложения
+Application configuration.
 """
 from pathlib import Path
 from typing import Literal
@@ -9,36 +9,36 @@ import os
 
 
 class Settings(BaseSettings):
-    """Настройки приложения"""
-    
-    # Пути
+    """Application settings."""
+
+    # Paths.
     BASE_DIR: Path = Path(__file__).parent.parent
     OUTPUT_DIR: Path = BASE_DIR / "output"
     TEMP_DIR: Path = BASE_DIR / "temp"
     LOGS_DIR: Path = BASE_DIR / "logs"
     
-    # API ключи
+    # API keys.
     OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
     
-    # Whisper настройки
+    # Whisper configuration.
     WHISPER_MODEL_DIR: Path = BASE_DIR / "models" / "whisper"
-    WHISPER_DEVICE: str = "cpu"  # "cpu" или "cuda" или "mps"
-    # Примечание: на M1 используем CPU (MPS имеет проблемы с Whisper)
-    # Производительность на M1 CPU: whisper_base 0.06x, whisper_small 0.19x
+    WHISPER_DEVICE: str = "cpu"  # "cpu", "cuda", or "mps"
+    # Note: on Apple Silicon we default to CPU (MPS has issues with Whisper).
+    # Performance on M1 CPU: whisper_base 0.06x, whisper_small 0.19x.
     
-    # NLLB настройки
+    # NLLB configuration.
     NLLB_MODEL_NAME: str = "facebook/nllb-200-distilled-1.3B"
     NLLB_MODEL_DIR: Path = BASE_DIR / "models" / "nllb"
-    # Производительность на M1 CPU: ~0.25x (лучше качество, медленнее в ~2 раза)
+    # Performance on M1 CPU: ~0.25x (better quality, ~2× slower).
     
-    # Языки
+    # Supported languages.
     SUPPORTED_LANGUAGES: list[str] = ["ru", "en"]
     
-    # Логирование
+    # Logging configuration.
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     
-    # Форматирование документов
-    DEFAULT_FONT: str = "Arial"  # Шрифт с кириллицей
+    # Document formatting.
+    DEFAULT_FONT: str = "Arial"  # Typeface with Cyrillic support.
     DEFAULT_FONT_SIZE: int = 11
     
     class Config:
@@ -47,14 +47,14 @@ class Settings(BaseSettings):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Создаем директории если их нет
+        # Ensure all required directories exist.
         self.OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
         self.TEMP_DIR.mkdir(exist_ok=True, parents=True)
         self.LOGS_DIR.mkdir(exist_ok=True, parents=True)
         self.WHISPER_MODEL_DIR.mkdir(exist_ok=True, parents=True)
         self.NLLB_MODEL_DIR.mkdir(exist_ok=True, parents=True)
         
-        #  Для M1/M2 используем CPU из-за проблем с MPS в Whisper
+        # Force CPU on Apple Silicon because Whisper struggles with MPS kernels.
         if os.uname().machine == 'arm64':
             self.WHISPER_DEVICE = "cpu"
             import logging
@@ -63,12 +63,12 @@ class Settings(BaseSettings):
         )
 
 
-# Глобальный экземпляр настроек
+# Global settings instance.
 settings = Settings()
 
 
 class TranscribeOptions:
-    """Доступные методы транскрибирования"""
+    """Available transcription backends."""
     WHISPER_BASE = "whisper_base"
     WHISPER_SMALL = "whisper_small"
     WHISPER_MEDIUM = "whisper_medium"
@@ -78,8 +78,24 @@ class TranscribeOptions:
 
 
 class TranslateOptions:
-    """Доступные методы перевода"""
+    """Available translation backends."""
     NLLB = "NLLB"
     OPENAI_API = "openai_api"
-    
+
     ALL = [NLLB, OPENAI_API]
+
+
+class RefineOptions:
+    """Available text refinement backends."""
+    OLLAMA = "ollama"
+    OPENAI_API = "openai_api"
+
+    ALL = [OLLAMA, OPENAI_API]
+
+
+class SummarizeOptions:
+    """Available summarization backends."""
+    OLLAMA = "ollama"
+    OPENAI_API = "openai_api"
+
+    ALL = [OLLAMA, OPENAI_API]
