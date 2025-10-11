@@ -153,36 +153,38 @@ class TestChunking:
 
         transcriber = Transcriber(method=TranscribeOptions.WHISPER_OPENAI_API)
 
-        # Mock the actual file operations
-        with patch('subprocess.run') as mock_run:
-            mock_run.return_value = MagicMock(stdout="100.0", returncode=0)
+        # Mock validation to skip file checks
+        with patch.object(transcriber, '_validate_audio_path'):
+            # Mock the actual file operations
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(stdout="100.0", returncode=0)
 
-            # Mock _find_speech_boundaries to return empty list (simple splitting)
-            with patch.object(transcriber, '_find_speech_boundaries', return_value=[]):
-                # Create a fake audio path
-                fake_path = Path("/fake/audio.mp3")
+                # Mock _find_speech_boundaries to return empty list (simple splitting)
+                with patch.object(transcriber, '_find_speech_boundaries', return_value=[]):
+                    # Create a fake audio path
+                    fake_path = Path("/fake/audio.mp3")
 
-                # Mock file size to trigger chunking
-                with patch.object(Path, 'stat') as mock_stat:
-                    mock_stat.return_value.st_size = 50 * 1024 * 1024  # 50 MB
+                    # Mock file size to trigger chunking
+                    with patch.object(Path, 'stat') as mock_stat:
+                        mock_stat.return_value.st_size = 50 * 1024 * 1024  # 50 MB
 
-                    with patch.object(Path, 'suffix', '.mp3'):
-                        with patch.object(Path, 'stem', 'audio'):
-                            with patch.object(Path, 'parent', Path('/fake')):
-                                chunks = transcriber._split_audio_file(fake_path)
+                        with patch.object(Path, 'suffix', '.mp3'):
+                            with patch.object(Path, 'stem', 'audio'):
+                                with patch.object(Path, 'parent', Path('/fake')):
+                                    chunks = transcriber._split_audio_file(fake_path)
 
-                                # Should return list of tuples
-                                assert isinstance(chunks, list)
-                                assert len(chunks) > 0
+                                    # Should return list of tuples
+                                    assert isinstance(chunks, list)
+                                    assert len(chunks) > 0
 
-                                # Each chunk should be (path, start_time, end_time)
-                                for chunk in chunks:
-                                    assert isinstance(chunk, tuple)
-                                    assert len(chunk) == 3
-                                    path, start, end = chunk
-                                    assert isinstance(start, float)
-                                    assert isinstance(end, float)
-                                    assert start < end
+                                    # Each chunk should be (path, start_time, end_time)
+                                    for chunk in chunks:
+                                        assert isinstance(chunk, tuple)
+                                        assert len(chunk) == 3
+                                        path, start, end = chunk
+                                        assert isinstance(start, float)
+                                        assert isinstance(end, float)
+                                        assert start < end
 
     def test_silent_chunk_timestamp_handling(self):
         """

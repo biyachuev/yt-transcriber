@@ -1,9 +1,10 @@
 """
 Module responsible for audio transcription via Whisper.
 """
+import atexit
 import re
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 
 import torch
 import whisper
@@ -12,6 +13,28 @@ from tqdm import tqdm
 from src.config import settings, TranscribeOptions
 from src.logger import logger
 from src.utils import format_timestamp, estimate_processing_time, format_log_preview
+
+# Global registry for cleanup of temporary chunk files
+_temp_chunk_files: Set[Path] = set()
+
+
+def _cleanup_temp_chunks():
+    """Clean up any remaining temporary chunk files on program exit."""
+    if _temp_chunk_files:
+        logger.debug("Cleaning up %d temporary chunk files...", len(_temp_chunk_files))
+        for chunk_path in list(_temp_chunk_files):
+            try:
+                if chunk_path.exists():
+                    chunk_path.unlink()
+                    logger.debug("Cleaned up: %s", chunk_path.name)
+            except Exception as e:
+                logger.warning("Failed to clean up %s: %s", chunk_path, e)
+            finally:
+                _temp_chunk_files.discard(chunk_path)
+
+
+# Register cleanup handler
+atexit.register(_cleanup_temp_chunks)
 
 
 class TranscriptionSegment:
@@ -246,6 +269,46 @@ class Transcriber:
             self._vad_pipeline = None
             return None
 
+    def _validate_audio_path(self, audio_path: Path) -> None:
+        """
+        Validate audio file path for security and existence.
+
+        Args:
+            audio_path: Path to validate.
+
+        Raises:
+            ValueError: If path is invalid or unsafe.
+            FileNotFoundError: If file doesn't exist.
+        """
+        # Check if file exists
+        if not audio_path.exists():
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+        # Check if it's actually a file (not a directory or special file)
+        if not audio_path.is_file():
+            raise ValueError(f"Path is not a regular file: {audio_path}")
+
+        # Check for suspicious characters that could indicate command injection attempts
+        # Note: subprocess.run with list args is safe, but this is defense in depth
+        suspicious_chars = [';', '&', '|', '`', '$', '\n', '\r']
+        path_str = str(audio_path)
+        for char in suspicious_chars:
+            if char in path_str:
+                logger.warning(
+                    "Suspicious character '%s' found in path: %s",
+                    char, path_str
+                )
+                # Don't raise error - just log warning as Path objects are safe with subprocess
+
+        # Check file size is reasonable (< 10 GB)
+        max_size = 10 * 1024 * 1024 * 1024  # 10 GB
+        file_size = audio_path.stat().st_size
+        if file_size > max_size:
+            raise ValueError(
+                f"Audio file too large: {file_size / (1024**3):.2f} GB. "
+                f"Maximum supported: {max_size / (1024**3):.0f} GB"
+            )
+
     def _find_speech_boundaries(self, audio_path: Path) -> List[tuple]:
         """
         Use VAD to find speech segment boundaries.
@@ -291,6 +354,9 @@ class Transcriber:
             List of tuples (chunk_path, start_time, end_time) for each chunk.
         """
         import subprocess
+
+        # Validate audio path for security
+        self._validate_audio_path(audio_path)
 
         logger.info("Splitting audio file into chunks...")
 
@@ -349,19 +415,57 @@ class Transcriber:
             chunk_path = temp_dir / f"{base_name}_chunk_{i}{original_extension}"
             duration = end_time - start_time
 
-            subprocess.run(
-                [
-                    "ffmpeg",
-                    "-i", str(audio_path),
-                    "-ss", str(start_time),
-                    "-t", str(duration),
-                    "-c", "copy",
-                    "-y",
-                    str(chunk_path),
-                ],
-                capture_output=True,
-                check=True
-            )
+            # Try stream copy first (fast, no re-encoding)
+            try:
+                subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-i", str(audio_path),
+                        "-ss", str(start_time),
+                        "-t", str(duration),
+                        "-c", "copy",
+                        "-y",
+                        str(chunk_path),
+                    ],
+                    capture_output=True,
+                    check=True,
+                    text=True
+                )
+            except subprocess.CalledProcessError as e:
+                # Stream copy failed, try re-encoding
+                logger.warning(
+                    "Stream copy failed for chunk %d (error: %s). Re-encoding...",
+                    i, e.stderr[:100] if e.stderr else "unknown"
+                )
+
+                # Use MP3 encoding as fallback (widely compatible)
+                chunk_path = temp_dir / f"{base_name}_chunk_{i}.mp3"
+                try:
+                    subprocess.run(
+                        [
+                            "ffmpeg",
+                            "-i", str(audio_path),
+                            "-ss", str(start_time),
+                            "-t", str(duration),
+                            "-c:a", "libmp3lame",
+                            "-b:a", "192k",
+                            "-y",
+                            str(chunk_path),
+                        ],
+                        capture_output=True,
+                        check=True,
+                        text=True
+                    )
+                    logger.debug("Successfully re-encoded chunk %d to MP3", i)
+                except subprocess.CalledProcessError as e2:
+                    logger.error(
+                        "Failed to create chunk %d even with re-encoding: %s",
+                        i, e2.stderr[:200] if e2.stderr else "unknown error"
+                    )
+                    raise
+
+            # Register chunk for cleanup
+            _temp_chunk_files.add(chunk_path)
 
             chunks.append((chunk_path, start_time, end_time))
             logger.debug(
@@ -411,7 +515,14 @@ class Transcriber:
         split_points = []
         current_start = 0.0
 
-        while current_start < total_duration:
+        # Calculate expected number of chunks for infinite loop protection
+        expected_chunks = int(total_duration / target_chunk_duration) + 1
+        max_iterations = expected_chunks * 3  # Allow 3x expected iterations as safety margin
+        iteration = 0
+
+        while current_start < total_duration and iteration < max_iterations:
+            iteration += 1
+
             # Target end time for this chunk
             target_end = min(current_start + target_chunk_duration, total_duration)
 
@@ -439,13 +550,29 @@ class Transcriber:
                     if abs(gap_middle - target_end) < abs(best_split - target_end):
                         best_split = gap_middle
 
+            # Force progress if stuck at same position
+            if best_split <= current_start:
+                logger.warning(
+                    "Could not find suitable split point, forcing progress at %.1f sec",
+                    target_end
+                )
+                best_split = target_end
+
             # Add this chunk
             split_points.append((current_start, best_split))
             current_start = best_split
 
-            # Safety: if we didn't move forward, force progress
+            # Break if we're at the end
             if current_start >= total_duration - 1.0:
                 break
+
+        # Check if we hit the iteration limit (should never happen in normal operation)
+        if iteration >= max_iterations:
+            logger.error(
+                "Reached maximum iterations (%d) in split point calculation. "
+                "This may indicate a bug. Returning partial results.",
+                max_iterations
+            )
 
         return split_points
 
@@ -526,7 +653,10 @@ class Transcriber:
                 # Clean up chunk files
                 for chunk_path, _, _ in chunks:
                     try:
-                        chunk_path.unlink()
+                        if chunk_path.exists():
+                            chunk_path.unlink()
+                        # Remove from global registry
+                        _temp_chunk_files.discard(chunk_path)
                     except Exception as e:
                         logger.warning("Failed to delete chunk %s: %s", chunk_path, e)
 
