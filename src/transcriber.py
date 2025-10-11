@@ -201,6 +201,252 @@ class Transcriber:
 
         return segments
 
+    def _get_vad_pipeline(self):
+        """
+        Get or create VAD pipeline for speech detection.
+
+        Returns:
+            pyannote VAD pipeline or None if not available.
+        """
+        if hasattr(self, '_vad_pipeline'):
+            return self._vad_pipeline
+
+        try:
+            from pyannote.audio import Pipeline
+            import os
+
+            # Check if HuggingFace token is available
+            hf_token = os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN")
+
+            if not hf_token:
+                logger.warning(
+                    "HUGGINGFACE_TOKEN not found. VAD-based splitting disabled. "
+                    "Set HF_TOKEN in .env to enable smart chunking."
+                )
+                self._vad_pipeline = None
+                return None
+
+            logger.info("Loading pyannote VAD pipeline...")
+            self._vad_pipeline = Pipeline.from_pretrained(
+                "pyannote/voice-activity-detection",
+                use_auth_token=hf_token
+            )
+            logger.info("VAD pipeline loaded successfully")
+            return self._vad_pipeline
+
+        except ImportError:
+            logger.warning(
+                "pyannote.audio not installed. Falling back to simple time-based splitting. "
+                "Install with: pip install pyannote.audio"
+            )
+            self._vad_pipeline = None
+            return None
+        except Exception as e:
+            logger.warning("Failed to load VAD pipeline: %s. Using simple splitting.", e)
+            self._vad_pipeline = None
+            return None
+
+    def _find_speech_boundaries(self, audio_path: Path) -> List[tuple]:
+        """
+        Use VAD to find speech segment boundaries.
+
+        Args:
+            audio_path: Path to audio file.
+
+        Returns:
+            List of (start, end) tuples in seconds for speech segments.
+        """
+        vad_pipeline = self._get_vad_pipeline()
+        if not vad_pipeline:
+            return []
+
+        logger.info("Detecting speech boundaries with VAD...")
+
+        try:
+            # Run VAD
+            vad_result = vad_pipeline(str(audio_path))
+
+            # Extract speech segments
+            speech_segments = []
+            for speech in vad_result.get_timeline().support():
+                speech_segments.append((speech.start, speech.end))
+
+            logger.info("Found %d speech segments", len(speech_segments))
+            return speech_segments
+
+        except Exception as e:
+            logger.warning("VAD failed: %s. Falling back to simple splitting.", e)
+            return []
+
+    def _split_audio_file(self, audio_path: Path, max_size_mb: int = 24) -> List[Path]:
+        """
+        Split audio file into chunks that fit within size limit.
+        Uses VAD to find optimal split points at speech boundaries.
+
+        Args:
+            audio_path: Path to the audio file.
+            max_size_mb: Maximum size per chunk in MB (default 24 MB to leave margin).
+
+        Returns:
+            List of paths to audio chunks.
+        """
+        import subprocess
+
+        logger.info("Splitting audio file into chunks...")
+
+        # Get audio duration
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(audio_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        total_duration = float(result.stdout.strip())
+
+        # Calculate how many chunks we need
+        file_size_mb = audio_path.stat().st_size / (1024 * 1024)
+        num_chunks = int(file_size_mb / max_size_mb) + 1
+        target_chunk_duration = total_duration / num_chunks
+
+        logger.info(
+            "Splitting %.2f MB file (%.1f sec) into ~%d chunks",
+            file_size_mb, total_duration, num_chunks
+        )
+
+        # Try to get speech boundaries from VAD
+        speech_segments = self._find_speech_boundaries(audio_path)
+
+        # Inform user about chunking strategy
+        if not speech_segments:
+            logger.warning(
+                "Using simple time-based splitting. For better quality, enable VAD-based smart chunking:\n"
+                "  1. Get HuggingFace token: https://huggingface.co/settings/tokens\n"
+                "  2. Accept model terms: https://huggingface.co/pyannote/voice-activity-detection\n"
+                "  3. Export token: export HF_TOKEN=your_token_here"
+            )
+
+        # Calculate split points
+        split_points = self._calculate_split_points(
+            total_duration,
+            target_chunk_duration,
+            speech_segments
+        )
+
+        # Create chunks based on split points
+        chunk_paths = []
+        temp_dir = audio_path.parent
+        base_name = audio_path.stem
+
+        for i, (start_time, end_time) in enumerate(split_points):
+            chunk_path = temp_dir / f"{base_name}_chunk_{i}.mp3"
+            duration = end_time - start_time
+
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-i", str(audio_path),
+                    "-ss", str(start_time),
+                    "-t", str(duration),
+                    "-c", "copy",
+                    "-y",
+                    str(chunk_path),
+                ],
+                capture_output=True,
+                check=True
+            )
+
+            chunk_paths.append(chunk_path)
+            logger.debug(
+                "Created chunk %d/%d: %s (%.1f-%.1f sec, %.1f sec duration)",
+                i + 1, len(split_points), chunk_path.name, start_time, end_time, duration
+            )
+
+        return chunk_paths
+
+    def _calculate_split_points(
+        self,
+        total_duration: float,
+        target_chunk_duration: float,
+        speech_segments: List[tuple]
+    ) -> List[tuple]:
+        """
+        Calculate optimal split points for audio chunks.
+
+        If VAD data is available, splits at speech boundaries.
+        Otherwise, splits at regular intervals.
+
+        Args:
+            total_duration: Total audio duration in seconds.
+            target_chunk_duration: Target duration for each chunk.
+            speech_segments: List of (start, end) speech segments from VAD.
+
+        Returns:
+            List of (start, end) tuples for each chunk.
+        """
+        if not speech_segments:
+            # Fallback: simple time-based splitting
+            logger.info("Using simple time-based splitting")
+            num_chunks = int(total_duration / target_chunk_duration) + 1
+            chunk_duration = total_duration / num_chunks
+
+            split_points = []
+            for i in range(num_chunks):
+                start = i * chunk_duration
+                end = min((i + 1) * chunk_duration, total_duration)
+                split_points.append((start, end))
+
+            return split_points
+
+        # VAD-based splitting: find optimal boundaries
+        logger.info("Using VAD-based smart splitting at speech boundaries")
+
+        split_points = []
+        current_start = 0.0
+
+        while current_start < total_duration:
+            # Target end time for this chunk
+            target_end = min(current_start + target_chunk_duration, total_duration)
+
+            # Find the best split point near target_end
+            # Look in a window of ±30 seconds around target
+            search_window_start = max(target_end - 30, current_start)
+            search_window_end = min(target_end + 30, total_duration)
+
+            # Find gaps between speech segments in the search window
+            best_split = target_end  # Default to target if no good gap found
+            min_gap_duration = 0.5  # Minimum gap duration to consider (seconds)
+
+            for i in range(len(speech_segments) - 1):
+                gap_start = speech_segments[i][1]  # End of current segment
+                gap_end = speech_segments[i + 1][0]  # Start of next segment
+                gap_duration = gap_end - gap_start
+
+                # Check if this gap is in our search window and is long enough
+                if (search_window_start <= gap_start <= search_window_end and
+                    gap_duration >= min_gap_duration):
+                    # Use the middle of the gap as split point
+                    gap_middle = (gap_start + gap_end) / 2
+
+                    # Prefer gaps closer to the target
+                    if abs(gap_middle - target_end) < abs(best_split - target_end):
+                        best_split = gap_middle
+
+            # Add this chunk
+            split_points.append((current_start, best_split))
+            current_start = best_split
+
+            # Safety: if we didn't move forward, force progress
+            if current_start >= total_duration - 1.0:
+                break
+
+        return split_points
+
     def _transcribe_with_openai_api(
         self,
         audio_path: Path,
@@ -239,17 +485,69 @@ class Transcriber:
         file_size = audio_path.stat().st_size
         max_size = 25 * 1024 * 1024  # 25 MB
 
+        # Split file if too large
         if file_size > max_size:
             logger.warning(
-                "Audio file size (%.2f MB) exceeds OpenAI limit (25 MB). "
-                "Consider using local Whisper instead.",
+                "Audio file size (%.2f MB) exceeds OpenAI limit (25 MB). Splitting into chunks...",
                 file_size / (1024 * 1024)
             )
-            raise ValueError(
-                f"Audio file too large for OpenAI API ({file_size / (1024 * 1024):.2f} MB). "
-                "Maximum is 25 MB."
-            )
+            chunk_paths = self._split_audio_file(audio_path)
 
+            try:
+                all_segments = []
+                cumulative_time = 0.0
+
+                for i, chunk_path in enumerate(chunk_paths):
+                    logger.info("Processing chunk %d/%d...", i + 1, len(chunk_paths))
+
+                    # Transcribe chunk
+                    chunk_segments = self._transcribe_single_file_with_openai(
+                        chunk_path, language, initial_prompt, client
+                    )
+
+                    # Adjust timestamps to account for previous chunks
+                    for seg in chunk_segments:
+                        seg.start += cumulative_time
+                        seg.end += cumulative_time
+                        all_segments.append(seg)
+
+                    # Update cumulative time for next chunk
+                    if chunk_segments:
+                        cumulative_time = all_segments[-1].end
+
+                logger.info("All chunks processed. Total segments: %d", len(all_segments))
+                return all_segments
+
+            finally:
+                # Clean up chunk files
+                for chunk_path in chunk_paths:
+                    try:
+                        chunk_path.unlink()
+                    except Exception as e:
+                        logger.warning("Failed to delete chunk %s: %s", chunk_path, e)
+
+        # File is small enough, process directly
+        return self._transcribe_single_file_with_openai(audio_path, language, initial_prompt, client)
+
+    def _transcribe_single_file_with_openai(
+        self,
+        audio_path: Path,
+        language: Optional[str],
+        initial_prompt: Optional[str],
+        client,
+    ) -> List[TranscriptionSegment]:
+        """
+        Transcribe a single audio file using OpenAI's Whisper API.
+
+        Args:
+            audio_path: Path to the audio file.
+            language: Language code or None.
+            initial_prompt: Optional prompt.
+            client: OpenAI client instance.
+
+        Returns:
+            List of TranscriptionSegment instances.
+        """
         logger.info("Uploading audio to OpenAI...")
 
         # Prepare API parameters
@@ -277,9 +575,9 @@ class Transcriber:
                 for seg in tqdm(response.segments, desc="Processing segments"):
                     segments.append(
                         TranscriptionSegment(
-                            start=seg.get('start', 0.0),
-                            end=seg.get('end', 0.0),
-                            text=seg.get('text', ''),
+                            start=getattr(seg, 'start', 0.0),
+                            end=getattr(seg, 'end', 0.0),
+                            text=getattr(seg, 'text', ''),
                         )
                     )
             else:
