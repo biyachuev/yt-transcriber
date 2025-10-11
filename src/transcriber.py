@@ -278,7 +278,7 @@ class Transcriber:
             logger.warning("VAD failed: %s. Falling back to simple splitting.", e)
             return []
 
-    def _split_audio_file(self, audio_path: Path, max_size_mb: int = 24) -> List[Path]:
+    def _split_audio_file(self, audio_path: Path, max_size_mb: int = 24) -> List[tuple]:
         """
         Split audio file into chunks that fit within size limit.
         Uses VAD to find optimal split points at speech boundaries.
@@ -288,7 +288,7 @@ class Transcriber:
             max_size_mb: Maximum size per chunk in MB (default 24 MB to leave margin).
 
         Returns:
-            List of paths to audio chunks.
+            List of tuples (chunk_path, start_time, end_time) for each chunk.
         """
         import subprocess
 
@@ -339,12 +339,14 @@ class Transcriber:
         )
 
         # Create chunks based on split points
-        chunk_paths = []
+        chunks = []
         temp_dir = audio_path.parent
         base_name = audio_path.stem
+        # Preserve original file extension to match container format
+        original_extension = audio_path.suffix
 
         for i, (start_time, end_time) in enumerate(split_points):
-            chunk_path = temp_dir / f"{base_name}_chunk_{i}.mp3"
+            chunk_path = temp_dir / f"{base_name}_chunk_{i}{original_extension}"
             duration = end_time - start_time
 
             subprocess.run(
@@ -361,13 +363,13 @@ class Transcriber:
                 check=True
             )
 
-            chunk_paths.append(chunk_path)
+            chunks.append((chunk_path, start_time, end_time))
             logger.debug(
                 "Created chunk %d/%d: %s (%.1f-%.1f sec, %.1f sec duration)",
                 i + 1, len(split_points), chunk_path.name, start_time, end_time, duration
             )
 
-        return chunk_paths
+        return chunks
 
     def _calculate_split_points(
         self,
@@ -491,36 +493,38 @@ class Transcriber:
                 "Audio file size (%.2f MB) exceeds OpenAI limit (25 MB). Splitting into chunks...",
                 file_size / (1024 * 1024)
             )
-            chunk_paths = self._split_audio_file(audio_path)
+            chunks = self._split_audio_file(audio_path)
 
             try:
                 all_segments = []
-                cumulative_time = 0.0
 
-                for i, chunk_path in enumerate(chunk_paths):
-                    logger.info("Processing chunk %d/%d...", i + 1, len(chunk_paths))
+                for i, (chunk_path, chunk_start, chunk_end) in enumerate(chunks):
+                    logger.info("Processing chunk %d/%d...", i + 1, len(chunks))
 
                     # Transcribe chunk
                     chunk_segments = self._transcribe_single_file_with_openai(
                         chunk_path, language, initial_prompt, client
                     )
 
-                    # Adjust timestamps to account for previous chunks
+                    # Adjust timestamps to account for chunk position in original file
                     for seg in chunk_segments:
-                        seg.start += cumulative_time
-                        seg.end += cumulative_time
+                        seg.start += chunk_start
+                        seg.end += chunk_start
                         all_segments.append(seg)
 
-                    # Update cumulative time for next chunk
-                    if chunk_segments:
-                        cumulative_time = all_segments[-1].end
+                    # Log if chunk was silent (no segments returned)
+                    if not chunk_segments:
+                        logger.debug(
+                            "Chunk %d/%d (%.1f-%.1f sec) contained no speech",
+                            i + 1, len(chunks), chunk_start, chunk_end
+                        )
 
                 logger.info("All chunks processed. Total segments: %d", len(all_segments))
                 return all_segments
 
             finally:
                 # Clean up chunk files
-                for chunk_path in chunk_paths:
+                for chunk_path, _, _ in chunks:
                     try:
                         chunk_path.unlink()
                     except Exception as e:

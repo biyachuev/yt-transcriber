@@ -1,5 +1,5 @@
 """
-Тесты для модуля transcriber
+Tests for the transcriber module.
 """
 import pytest
 from unittest.mock import patch, MagicMock
@@ -8,10 +8,10 @@ from src.config import TranscribeOptions
 
 
 class TestTranscriptionSegment:
-    """Тесты для класса TranscriptionSegment"""
+    """Unit tests covering TranscriptionSegment behaviour."""
     
     def test_segment_creation(self):
-        """Проверка создания сегмента"""
+        """Ensure the segment stores basic attributes."""
         segment = TranscriptionSegment(
             start=10.5,
             end=15.3,
@@ -24,7 +24,7 @@ class TestTranscriptionSegment:
         assert segment.speaker is None
     
     def test_segment_with_speaker(self):
-        """Проверка сегмента со спикером"""
+        """Ensure speaker information is preserved."""
         segment = TranscriptionSegment(
             start=0,
             end=5,
@@ -35,7 +35,7 @@ class TestTranscriptionSegment:
         assert segment.speaker == "Speaker 1"
     
     def test_segment_strips_text(self):
-        """Проверка удаления пробелов из текста"""
+        """Leading and trailing whitespace should be removed."""
         segment = TranscriptionSegment(
             start=0,
             end=5,
@@ -45,7 +45,7 @@ class TestTranscriptionSegment:
         assert segment.text == "Text with spaces"
     
     def test_segment_to_dict(self):
-        """Проверка преобразования в словарь"""
+        """Dictionary representation contains expected keys."""
         segment = TranscriptionSegment(
             start=65,
             end=70,
@@ -61,25 +61,25 @@ class TestTranscriptionSegment:
 
 
 class TestTranscriber:
-    """Тесты для класса Transcriber"""
+    """Unit tests covering the Transcriber helper."""
 
     @patch('src.transcriber.torch')
     @patch('src.transcriber.whisper')
     def test_transcriber_initialization(self, mock_whisper, mock_torch):
-        """Проверка инициализации транскрайбера"""
+        """Ensure device selection and lazy model loading."""
         mock_torch.cuda.is_available.return_value = False
         mock_torch.backends.mps.is_available.return_value = False
 
         transcriber = Transcriber(method=TranscribeOptions.WHISPER_BASE)
 
         assert transcriber.method == TranscribeOptions.WHISPER_BASE
-        assert transcriber.model is None  # Модель загружается по требованию
+        assert transcriber.model is None  # model loads lazily
         assert transcriber.device in ['cpu', 'cuda', 'mps']
 
     @patch('src.transcriber.torch')
     @patch('src.transcriber.whisper')
     def test_segments_to_text(self, mock_whisper, mock_torch):
-        """Проверка преобразования сегментов в текст"""
+        """Join segments into a single text block."""
         mock_torch.cuda.is_available.return_value = False
         mock_torch.backends.mps.is_available.return_value = False
 
@@ -96,12 +96,12 @@ class TestTranscriber:
         assert "First segment" in result
         assert "Second segment" in result
         assert "Third segment" in result
-        assert result.count("\n\n") == 2  # Два разделителя между тремя сегментами
+        assert result.count("\n\n") == 2  # two separators between three segments
 
     @patch('src.transcriber.torch')
     @patch('src.transcriber.whisper')
     def test_segments_to_text_with_timestamps(self, mock_whisper, mock_torch):
-        """Проверка преобразования сегментов в текст с таймкодами"""
+        """Ensure timestamps are added when requested."""
         mock_torch.cuda.is_available.return_value = False
         mock_torch.backends.mps.is_available.return_value = False
 
@@ -122,7 +122,7 @@ class TestTranscriber:
     @patch('src.transcriber.torch')
     @patch('src.transcriber.whisper')
     def test_segments_to_text_with_timestamps_and_speakers(self, mock_whisper, mock_torch):
-        """Проверка преобразования с таймкодами и спикерами"""
+        """Ensure timestamps and speaker labels are included."""
         mock_torch.cuda.is_available.return_value = False
         mock_torch.backends.mps.is_available.return_value = False
 
@@ -144,13 +144,112 @@ class TestTranscriber:
         assert "[00:05]" in result
 
 
-# Интеграционные тесты (требуют аудиофайла)
+class TestChunking:
+    """Tests for audio chunking logic."""
+
+    def test_chunk_metadata_preservation(self):
+        """Ensure _split_audio_file returns chunk metadata (path, start, end)."""
+        from pathlib import Path
+
+        transcriber = Transcriber(method=TranscribeOptions.WHISPER_OPENAI_API)
+
+        # Mock the actual file operations
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(stdout="100.0", returncode=0)
+
+            # Mock _find_speech_boundaries to return empty list (simple splitting)
+            with patch.object(transcriber, '_find_speech_boundaries', return_value=[]):
+                # Create a fake audio path
+                fake_path = Path("/fake/audio.mp3")
+
+                # Mock file size to trigger chunking
+                with patch.object(Path, 'stat') as mock_stat:
+                    mock_stat.return_value.st_size = 50 * 1024 * 1024  # 50 MB
+
+                    with patch.object(Path, 'suffix', '.mp3'):
+                        with patch.object(Path, 'stem', 'audio'):
+                            with patch.object(Path, 'parent', Path('/fake')):
+                                chunks = transcriber._split_audio_file(fake_path)
+
+                                # Should return list of tuples
+                                assert isinstance(chunks, list)
+                                assert len(chunks) > 0
+
+                                # Each chunk should be (path, start_time, end_time)
+                                for chunk in chunks:
+                                    assert isinstance(chunk, tuple)
+                                    assert len(chunk) == 3
+                                    path, start, end = chunk
+                                    assert isinstance(start, float)
+                                    assert isinstance(end, float)
+                                    assert start < end
+
+    def test_silent_chunk_timestamp_handling(self):
+        """
+        Regression test: timestamps must be correct even when a chunk contains no speech.
+        Bug was: cumulative_time only advanced when segments were found.
+        Fix: use chunk_start instead of cumulative tracking.
+        """
+        from pathlib import Path
+
+        transcriber = Transcriber(method=TranscribeOptions.WHISPER_OPENAI_API)
+
+        # Simulate 3 chunks: chunk 0 has speech, chunk 1 is silent, chunk 2 has speech
+        mock_chunks = [
+            (Path("/fake/chunk_0.mp3"), 0.0, 100.0),    # 0-100s: speech
+            (Path("/fake/chunk_1.mp3"), 100.0, 200.0),  # 100-200s: SILENT
+            (Path("/fake/chunk_2.mp3"), 200.0, 300.0),  # 200-300s: speech
+        ]
+
+        # Mock OpenAI responses
+        def mock_transcribe_single(chunk_path, *args, **kwargs):
+            if "chunk_0" in str(chunk_path):
+                # Chunk 0: speech from 0-10s (relative to chunk)
+                return [TranscriptionSegment(0.0, 10.0, "First segment")]
+            elif "chunk_1" in str(chunk_path):
+                # Chunk 1: SILENT - no segments
+                return []
+            elif "chunk_2" in str(chunk_path):
+                # Chunk 2: speech from 0-10s (relative to chunk)
+                return [TranscriptionSegment(0.0, 10.0, "Third segment")]
+            return []
+
+        with patch.object(transcriber, '_split_audio_file', return_value=mock_chunks):
+            with patch.object(transcriber, '_transcribe_single_file_with_openai', side_effect=mock_transcribe_single):
+                # Mock file size check
+                fake_path = Path("/fake/large_audio.mp3")
+                with patch.object(Path, 'stat') as mock_stat:
+                    mock_stat.return_value.st_size = 50 * 1024 * 1024  # 50 MB
+
+                    # Call the main transcription method
+                    segments = transcriber._transcribe_with_openai_api(
+                        fake_path,
+                        language='en',
+                        initial_prompt=None
+                    )
+
+                    # Should have 2 segments (chunk 1 was silent)
+                    assert len(segments) == 2
+
+                    # First segment: from chunk 0, starts at 0 + chunk_start = 0.0
+                    assert segments[0].start == 0.0
+                    assert segments[0].end == 10.0
+                    assert segments[0].text == "First segment"
+
+                    # Second segment: from chunk 2, starts at 0 + chunk_start = 200.0
+                    # This is the key test - it should NOT be shifted by chunk 1's missing segments
+                    assert segments[1].start == 200.0
+                    assert segments[1].end == 210.0
+                    assert segments[1].text == "Third segment"
+
+
+# Integration tests (require audio files)
 @pytest.mark.integration
 class TestTranscriberIntegration:
-    """Интеграционные тесты (пропускаются по умолчанию)"""
-    
-    @pytest.mark.skip(reason="Требуется тестовый аудиофайл")
+    """Integration tests (skipped unless audio samples are present)."""
+
+    @pytest.mark.skip(reason="Requires test audio file")
     def test_transcribe_audio_file(self):
-        """Проверка транскрибирования реального файла"""
-        # Этот тест требует наличия тестового аудиофайла
+        """Placeholder for real-file transcription test."""
+        # Requires a sample audio file to run
         pass
