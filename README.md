@@ -1,67 +1,80 @@
 # YouTube Transcriber & Translator
 
-Универсальный инструмент для транскрибирования и перевода видео с YouTube, аудиофайлов и текстовых документов.
+A flexible toolkit for transcribing and translating YouTube videos, audio files, and existing documents.
 
-## 🎯 Возможности
+## 🎯 Highlights
 
-### Версия 1.2 (текущая)
-- ✅ **Обработка текстовых файлов** (.docx, .md, .txt)
-  - Чтение готовых транскрипций
-  - Улучшение текста с помощью LLM
-  - Перевод существующих документов
-  - Автоматическое определение языка
+### Version 1.4 (current)
+- ✅ **Video file support**
+  - Process local video files (MP4, MKV, AVI, MOV, etc.)
+  - Automatic audio extraction using FFmpeg
+  - Full pipeline support (transcribe, translate, refine)
 
-### Версия 1.1
-- ✅ **Оптимизированные промпты для LLM-улучшения**
-  - Удаление слов-паразитов (um, uh, эм, ну)
-  - Конвертация чисел ("twenty eight" → "28")
-  - Сохранение ВСЕХ деталей и примеров
-  - Поддержка русского и английского
+### Version 1.3
+- ✅ **Document processing** (.docx, .md, .txt, .pdf)
+  - Read existing transcripts
+  - **PDF support**
+  - Post-process text with an LLM
+  - Translate uploaded documents
+  - Automatic language detection
+- ✅ **Quality & testing**
+  - 139 automated tests with 49% coverage
+  - CI/CD powered by GitHub Actions
+  - Pre-commit hooks (black, flake8, mypy)
+  - Full type hints across the codebase
 
-### Версия 1.0
-- ✅ Скачивание и обработка видео с YouTube
-- ✅ Обработка локальных аудиофайлов (mp3, wav и др.)
-- ✅ Транскрибирование через Whisper (base, small, medium)
-- ✅ Улучшение транскрипции с помощью локальных LLM через Ollama (qwen2.5, llama3, и др.)
-- ✅ Автоматическое определение языка (русский/английский)
-- ✅ Перевод через NLLB от Meta
-- ✅ Экспорт в форматы .docx и .md
-- ✅ Пользовательские промпты для Whisper (из файла)
-- ✅ Автоматическое создание промптов из метаданных YouTube
-- ✅ Логирование и прогресс-бары
-- ✅ Оптимизация для Apple M1/M2
+### Version 1.1
+- ✅ **Optimised prompts for LLM polishing**
+  - Removes filler words ("um", "uh", etc.)
+  - Normalises numbers ("twenty eight" → "28")
+  - Preserves **all** facts and examples
+  - Works for both Russian and English content
 
-### В разработке
-- 🔄 Whisper через OpenAI API
-- 🔄 Перевод через OpenAI API
-- 🔄 Speaker diarization
-- 🔄 Docker поддержка
+### Version 1.0
+- ✅ Downloading and processing YouTube videos
+- ✅ Processing local audio files (mp3, wav, ...)
+- ✅ Processing local video files (mp4, mkv, avi, ...)
+- ✅ Whisper-based transcription (base, small, medium)
+- ✅ LLM-based refinement through Ollama (qwen2.5, llama3, ...)
+- ✅ Automatic language detection (ru/en)
+- ✅ Translation with Meta NLLB
+- ✅ Export to .docx and .md
+- ✅ Custom Whisper prompts (from file)
+- ✅ Prompt generation from YouTube metadata
+- ✅ Rich logging and progress bars
+- ✅ Apple M1/M2 optimisations
 
-## 📋 Требования
+### In progress
+- 🔄 Whisper via OpenAI API
+- 🔄 Translation via OpenAI API
+- 🔄 Speaker diarisation
+- 🔄 Docker support
 
-### Системные требования
+## 📋 Requirements
+
+### System
 - Python 3.9+
-- FFmpeg (для обработки аудио)
-- Ollama (опционально, для улучшения транскрипций)
-- 8GB RAM (минимум), 16GB рекомендуется
-- ~5GB свободного места на диске (для моделей Whisper и NLLB)
-- +3-7GB для моделей Ollama (если используется улучшение транскрипций)
+- FFmpeg (audio preprocessing)
+- Ollama (optional, for LLM refinement)
+- 8 GB RAM minimum, 16 GB recommended
+- ~5 GB disk space for Whisper and NLLB models
+- Additional 3–7 GB if you use Ollama models
 
-### Поддерживаемые платформы
-- macOS (включая Apple Silicon M1/M2)
+### Supported platforms
+- macOS (including Apple Silicon)
 - Linux
 - Windows
 
-## 🚀 Установка
+## 🚀 Installation
 
-### 1. Клонирование репозитория
+### 1. Clone the repository
 
 ```bash
 git clone <repository-url>
 cd youtube-transcriber
 ```
 
-### 2. Создание виртуального окружения
+### 2. Create a virtual environment
 
 ```bash
 python -m venv venv
@@ -73,388 +86,376 @@ source venv/bin/activate
 venv\Scripts\activate
 ```
 
-### 3. Установка FFmpeg
+### 3. Install FFmpeg
 
-**macOS:**
+**macOS**
 ```bash
 brew install ffmpeg
 ```
 
-**Linux (Ubuntu/Debian):**
+**Linux (Ubuntu/Debian)**
 ```bash
 sudo apt update
 sudo apt install ffmpeg
 ```
 
-**Windows:**
-Скачайте с [ffmpeg.org](https://ffmpeg.org/download.html) и добавьте в PATH
+**Windows**
+Download a build from [ffmpeg.org](https://ffmpeg.org/download.html) and add it to your `PATH`.
 
-### 4. Установка зависимостей Python
+### 4. Install Python dependencies
 
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 5. Установка Ollama (опционально, для улучшения транскрипций)
+### 5. Install Ollama (optional, for refinement)
 
-**macOS/Linux:**
+**macOS/Linux**
 ```bash
-# Установка Ollama
+# Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
 
-# Загрузка рекомендуемых моделей
-ollama pull qwen2.5:3b    # Быстрая, хорошее качество (3GB)
-ollama pull qwen2.5:7b    # Медленнее, лучше качество (7GB)
+# Recommended models
+ollama pull qwen2.5:3b    # Fast, good quality (~3 GB)
+ollama pull qwen2.5:7b    # Slower, higher quality (~7 GB)
 
-# Запуск сервера (если не запущен автоматически)
+# Start the server (if not already running)
 ollama serve
 ```
 
-**Windows:**
-Скачайте установщик с [ollama.com](https://ollama.com/download)
+**Windows**
+Download the installer from [ollama.com](https://ollama.com/download).
 
-### 6. Настройка переменных окружения (опционально)
+### 6. Environment variables (optional)
 
-Создайте файл `.env` в корне проекта:
+Create a `.env` file in the project root:
 
 ```bash
-# Для использования OpenAI API (в разработке)
+# Enable OpenAI integration (experimental)
 OPENAI_API_KEY=your_api_key_here
 
-# Уровень логирования
+# Logging level
 LOG_LEVEL=INFO
 ```
 
-## 📖 Использование
+## 📖 Usage
 
-### Базовые примеры
+### Quick examples
 
-#### 1. Транскрибирование YouTube видео
+#### 1. Transcribe a YouTube video
 
 ```bash
 python -m src.main --url "https://youtube.com/watch?v=dQw4w9WgXcQ" --transcribe whisper_base
 ```
 
-#### 2. Транскрибирование и перевод
+#### 2. Transcribe and translate
 
 ```bash
-python -m src.main \
-    --url "https://youtube.com/watch?v=dQw4w9WgXcQ" \
-    --transcribe whisper_base \
-    --translate NLLB
+python -m src.main     --url "https://youtube.com/watch?v=dQw4w9WgXcQ"     --transcribe whisper_base     --translate NLLB
 ```
 
-#### 3. Обработка локального аудиофайла
+#### 3. Process a local audio file
 
 ```bash
-python -m src.main \
-    --input_audio audio.mp3 \
-    --transcribe whisper_medium \
-    --translate NLLB
+python -m src.main     --input_audio audio.mp3     --transcribe whisper_medium     --translate NLLB
 ```
 
-#### 4. Улучшение транскрипции с помощью LLM
+#### 4. Process a local video file
 
 ```bash
-python -m src.main \
-    --input_audio audio.mp3 \
-    --transcribe whisper_medium \
-    --refine-model qwen2.5:7b \
-    --translate NLLB
+python -m src.main     --input_video video.mp4     --transcribe whisper_medium     --translate NLLB
 ```
 
-Это создаст два документа:
-- `audio (original).docx/md` - оригинальная транскрипция без перевода
-- `audio (refined).docx/md` - улучшенная транскрипция с переводом
+Supported video formats: MP4, MKV, AVI, MOV, and any format supported by FFmpeg.
 
-#### 5. Использование пользовательского промпта для Whisper
+#### 5. Refine a transcript with an LLM
 
 ```bash
-# Создайте файл prompt.txt с ключевыми словами:
+python -m src.main     --input_audio audio.mp3     --transcribe whisper_medium     --refine-model qwen2.5:7b     --translate NLLB
+```
+
+Produces two documents:
+- `audio (original).docx/md` — raw transcript without translation
+- `audio (refined).docx/md` — polished transcript with translation
+
+#### 6. Use a custom Whisper prompt
+
+```bash
+# Create prompt.txt with project-specific terms
 # FIDE, Hikaru Nakamura, Magnus Carlsen, chess tournament
 
-python -m src.main \
-    --url "https://youtube.com/watch?v=..." \
-    --transcribe whisper_base \
-    --prompt prompt.txt
+python -m src.main     --url "https://youtube.com/watch?v=YOUR_VIDEO_ID"     --transcribe whisper_base     --prompt prompt.txt
 ```
 
+## ⚖️ Legal notice
+- Make sure you respect YouTube Terms of Service and copyright law before downloading or processing any content. Only use the tool for media you own or have explicit permission to process.
+- Output documents and logs may contain fragments of the original content. Store them locally and review licences before sharing.
+- The default translation model `facebook/nllb-200-distilled-1.3B` is released under CC BY-NC 4.0 (non-commercial). Use a different model or obtain a licence for commercial scenarios.
 
-
-#### 6. Обработка текстовых файлов (v1.2)
+#### 7. Process existing documents (v1.2)
 
 ```bash
-# Улучшение существующей транскрипции
-python -m src.main \
-    --input_text output/document.md \
-    --refine-model qwen2.5:7b
+# Improve an existing transcript
+python -m src.main     --input_text output/document.md     --refine-model qwen2.5:7b
 
-# Перевод документа
-python -m src.main \
-    --input_text transcription.docx \
-    --translate NLLB
+# Translate a document
+python -m src.main     --input_text transcription.docx     --translate NLLB
 
-# Улучшение и перевод
-python -m src.main \
-    --input_text document.txt \
-    --refine-model qwen2.5:7b \
-    --translate NLLB
+# Refine and translate
+python -m src.main     --input_text document.txt     --refine-model qwen2.5:7b     --translate NLLB
 ```
 
-Поддерживаемые форматы: `.md`, `.docx`, `.txt`
+Supported formats: `.md`, `.docx`, `.txt`
 
-
-#### 7. Просмотр справки
+#### 8. Help screen
 
 ```bash
 python -m src.main --help
 ```
 
-### Параметры командной строки
+### CLI arguments
 
-| Параметр | Описание | Пример |
-|----------|----------|--------|
-| `--url` | URL видео на YouTube | `--url "https://youtube.com/..."` |
-| `--input_audio` | Путь к аудиофайлу (mp3, wav и др.) | `--input_audio audio.mp3` |
-| `--input_text` | Путь к текстовому файлу (.docx, .md, .txt) | `--input_text doc.docx` |
-| `--transcribe` | Метод транскрибирования | `--transcribe whisper_medium` |
-| `--translate` | Метод перевода | `--translate NLLB` |
-| `--refine-model` | Модель Ollama для улучшения | `--refine-model qwen2.5:7b` |
-| `--prompt` | Файл с промптом для Whisper | `--prompt prompt.txt` |
-| `--speakers` | Определение спикеров (в разработке) | `--speakers` |
-| `--help` | Показать справку | `--help` |
+| Argument | Description | Example |
+|----------|-------------|---------|
+| `--url` | YouTube video URL | `--url "https://youtube.com/..."` |
+| `--input_audio` | Path to an audio file (mp3, wav, …) | `--input_audio audio.mp3` |
+| `--input_video` | Path to a video file (mp4, mkv, avi, …) | `--input_video video.mp4` |
+| `--input_text` | Path to a text document (.docx, .md, .txt) | `--input_text doc.docx` |
+| `--transcribe` | Transcription backend | `--transcribe whisper_medium` |
+| `--translate` | Translation backend | `--translate NLLB` |
+| `--refine-model` | Ollama model for refinement | `--refine-model qwen2.5:7b` |
+| `--prompt` | Custom Whisper prompt file | `--prompt prompt.txt` |
+| `--speakers` | Enable speaker diarisation (experimental) | `--speakers` |
+| `--help` | Show help | `--help` |
 
-### Доступные методы
+### Available methods
 
-**Транскрибирование:**
-- `whisper_base` - Whisper Base (быстро, хорошее качество)
-- `whisper_small` - Whisper Small (медленнее, лучше)
-- `whisper_medium` - Whisper Medium (медленно, высокое качество)
-- `whisper_openai_api` - Whisper API (в разработке)
+**Transcription**
+- `whisper_base` — fast, good quality
+- `whisper_small` — slower, higher quality
+- `whisper_medium` — slowest, best quality
+- `whisper_openai_api` — OpenAI Whisper (coming soon)
 
-**Улучшение транскрипций (требует Ollama):**
-- `qwen2.5:3b` - Быстрая модель, 3GB (рекомендуется)
-- `qwen2.5:7b` - Лучшее качество, 7GB
-- `llama3.2:3b` - Быстрая, хорошее качество
-- `llama3:8b` - Медленнее, но качественнее
-- `mistral:7b` - Хороший баланс
-- Любая другая модель из [библиотеки Ollama](https://ollama.com/library)
+**Refinement (requires Ollama)**
+- `qwen2.5:3b` — fast, 3 GB (recommended)
+- `qwen2.5:7b` — slower, better quality
+- `llama3.2:3b` — fast, solid quality
+- `llama3:8b` — slower, higher quality
+- `mistral:7b` — balanced
+- Any other model available in the [Ollama library](https://ollama.com/library)
 
-**Перевод:**
-- `NLLB` - NLLB от Meta (локально, бесплатно)
-- `openai_api` - OpenAI API (в разработке)
+**Translation**
+- `NLLB` — Meta NLLB (local, free)
+- `openai_api` — OpenAI API (coming soon)
 
-## 📁 Структура проекта
+## 📁 Project structure
 
 ```
 youtube-transcriber/
-├── src/                      # Исходный код
-│   ├── main.py              # Точка входа
-│   ├── config.py            # Конфигурация
-│   ├── downloader.py        # Загрузка с YouTube
-│   ├── transcriber.py       # Транскрибирование
-│   ├── text_reader.py        # Чтение текстовых файлов
-
-│   ├── translator.py        # Перевод
-│   ├── text_refiner.py      # Улучшение транскрипций через LLM
-│   ├── document_writer.py   # Создание документов
-│   ├── utils.py             # Утилиты
-│   └── logger.py            # Логирование
-├── tests/                   # Тесты
-├── output/                  # Результаты обработки
-├── temp/                    # Временные файлы
-├── logs/                    # Логи
-├── requirements.txt         # Зависимости
-├── .env.example            # Пример конфигурации
-└── README.md               # Документация
+├── src/                      # Source code
+│   ├── main.py              # Entry point
+│   ├── config.py            # Configuration
+│   ├── downloader.py        # YouTube downloads
+│   ├── transcriber.py       # Transcription
+│   ├── text_reader.py       # Text ingestion
+│   ├── translator.py        # Translation
+│   ├── text_refiner.py      # LLM-based refinement
+│   ├── document_writer.py   # Document generation
+│   ├── utils.py             # Utilities
+│   └── logger.py            # Logging setup
+├── tests/                   # Automated tests
+├── output/                  # Generated docs
+├── temp/                    # Temporary files
+├── logs/                    # Logs
+├── requirements.txt         # Runtime dependencies
+├── .env.example             # Sample configuration
+└── README.md                # Documentation
 ```
 
-**Примечание:** Модели Whisper и NLLB скачиваются автоматически в `~/.cache/` при первом использовании.
+**Note:** Whisper and NLLB models are cached in `~/.cache/` on first run.
 
-## 🔧 Конфигурация
+## 🔧 Configuration
 
-Настройки находятся в `src/config.py`. Основные параметры:
+Main settings live in `src/config.py`:
 
 ```python
-# Пути
-OUTPUT_DIR = "output"        # Папка для результатов
-TEMP_DIR = "temp"           # Временные файлы
-LOGS_DIR = "logs"           # Логи
+# Paths
+OUTPUT_DIR = "output"        # Output folder
+TEMP_DIR = "temp"            # Temporary files
+LOGS_DIR = "logs"            # Logs
 
-# Модели
-WHISPER_DEVICE = "mps"      # cpu/cuda/mps (авто для M1)
+# Models
+WHISPER_DEVICE = "mps"       # cpu/cuda/mps (auto-switch for M1)
 NLLB_MODEL_NAME = "facebook/nllb-200-distilled-600M"
 
-# Логирование
-LOG_LEVEL = "INFO"          # DEBUG/INFO/WARNING/ERROR
+# Logging
+LOG_LEVEL = "INFO"           # DEBUG/INFO/WARNING/ERROR
 ```
 
-## 📊 Производительность
+## 📊 Performance
 
-### Примерное время обработки (MacBook Air M1, 16GB, CPU)
+Approximate processing time on a MacBook Air M1 (16 GB, CPU):
 
-| Длительность видео | Транскрибирование<br>(whisper_base) | Транскрибирование<br>(whisper_small) | Перевод<br>(NLLB) | Итого<br>(base + перевод) | Итого<br>(small + перевод) |
-|-------------------|-------------------------------------|--------------------------------------|-------------------|---------------------------|----------------------------|
-| 3 минуты | ~11 сек | ~34 сек | ~1.5 мин | ~2 мин | ~3 мин |
-| 10 минут | ~36 сек | ~2 мин | ~5 мин | ~5.5 мин | ~7 мин |
-| 30 минут | ~1.8 мин | ~5.7 мин | ~14 мин | ~16 мин | ~20 мин |
-| 1 час | ~3.6 мин | ~11 мин | ~28 мин | ~32 мин | ~39 мин |
-| 2 часа | ~7 мин | ~23 мин | ~56 мин | ~63 мин | ~79 мин |
+| Video length | whisper_base | whisper_small | NLLB translation | Total (base+translate) | Total (small+translate) |
+|--------------|--------------|---------------|------------------|------------------------|-------------------------|
+| 3 minutes    | ~11 s        | ~34 s         | ~1.5 min         | ~2 min                 | ~3 min                  |
+| 10 minutes   | ~36 s        | ~2 min        | ~5 min           | ~5.5 min               | ~7 min                  |
+| 30 minutes   | ~1.8 min     | ~5.7 min      | ~14 min          | ~16 min                | ~20 min                 |
+| 1 hour       | ~3.6 min     | ~11 min       | ~28 min          | ~32 min                | ~39 min                 |
+| 2 hours      | ~7 min       | ~23 min       | ~56 min          | ~63 min                | ~79 min                 |
 
-**Множители обработки:**
-- Whisper Base: 0.06x (в 16 раз быстрее реального времени!) 🚀
-- Whisper Small: 0.19x (в 5 раз быстрее реального времени)
-- NLLB: 0.47x (в 2 раза быстрее реального времени)
+**Processing factors:**
+- Whisper Base: 0.06× (≈16× faster than realtime) 🚀
+- Whisper Small: 0.19× (≈5× faster than realtime)
+- NLLB: 0.47× (≈2× faster than realtime)
 
+## 🐛 Troubleshooting
 
-## 🐛 Решение проблем
+### Installation issues
 
-### Ошибки установки
-
-**Проблема:** `torch` не устанавливается на M1 Mac
+**Problem:** `torch` fails to install on Apple Silicon
 ```bash
-# Решение: используйте версию для Apple Silicon
+# Use the dedicated Apple Silicon build
 pip install --upgrade torch torchvision torchaudio
 ```
 
-**Проблема:** FFmpeg не найден
+**Problem:** FFmpeg not found
 ```bash
-# Проверьте установку
 ffmpeg -version
-
-# Если не установлен, установите через brew (macOS)
+# If missing, install via Homebrew (macOS)
 brew install ffmpeg
 ```
 
-**Проблема:** Недостаточно памяти
+**Problem:** Out of memory
 ```bash
-# Используйте меньшую модель Whisper
-python -m src.main --url "..." --transcribe whisper_base  # вместо whisper_small
+# Switch to a smaller Whisper model
+python -m src.main --url "..." --transcribe whisper_base
 ```
 
-### Ошибки выполнения
+### Runtime issues
 
-**Проблема:** "Model not found"
-- Модели загружаются автоматически при первом запуске
-- Убедитесь, что есть подключение к интернету
-- Проверьте, что папка `models/` доступна для записи
+**Problem:** `Model not found`
+- Models download automatically on first run
+- Ensure you have an internet connection
+- Check that the `models/` directory is writable
 
-**Проблема:** Медленная работа
-- Используйте `whisper_base` вместо `whisper_small`
-- Убедитесь, что используется GPU/MPS (проверьте логи)
-- Закройте другие ресурсоемкие приложения
+**Problem:** Processing is slow
+- Use `whisper_base` instead of `whisper_small`
+- Confirm that GPU/MPS acceleration is active (see logs)
+- Close other resource-heavy applications
 
-## 🧪 Тестирование
+## 🧪 Testing
 
 ```bash
-# Установка зависимостей для разработки
+# Install dev dependencies
 pip install -r requirements-dev.txt
 
-# Запуск тестов
+# Run tests
 pytest tests/
 
-# С покрытием кода
+# Coverage report
 pytest --cov=src tests/
 ```
 
-## 📝 Примеры вывода
+## 📝 Sample output
 
-### Формат .docx
+### .docx format
 ```
-# Название видео
+# Video title
 
-## Перевод
-Метод: NLLB
+## Translation
+Method: NLLB
 
-[00:15] Привет всем! Сегодня мы поговорим о...
+[00:15] Hello everyone! Today we will talk about...
 
-[01:32] Первая важная тема - это...
+[01:32] The first important topic is...
 
-## Расшифровка
-Метод: whisper_base
+## Transcript
+Method: whisper_base
 
 [00:15] Hello everyone! Today we'll talk about...
 
 [01:32] The first important topic is...
 ```
 
-### Формат .md
-Аналогичный формат с markdown разметкой
+### .md format
+Uses the same layout with Markdown syntax.
 
 ## 🛣️ Roadmap
 
-### v1.0 - ✅ Готово
-- ✅ YouTube + локальные аудиофайлы
+### v1.0 — ✅ Shipped
+- ✅ YouTube + local audio ingestion
 - ✅ Whisper (base, small, medium)
-- ✅ Улучшение транскрипций через Ollama
-- ✅ NLLB перевод
-- ✅ Пользовательские промпты
-- ✅ Автоопределение языка
+- ✅ LLM-based refinement via Ollama
+- ✅ NLLB translation
+- ✅ Custom prompts
+- ✅ Automatic language detection
 
-### v2.0 - Планируется
-- [ ] Обработка текстовых файлов (docx, md)
-- [ ] OpenAI API интеграция
-- [ ] Speaker diarization
-- [ ] Unit-тесты и CI/CD
-- [ ] Docker образ
-- [ ] Web интерфейс
-- [ ] Batch обработка
+### v2.0 — Planned
+- [ ] Extended document ingestion
+- [ ] OpenAI API integration
+- [ ] Speaker diarisation
+- [ ] Enhanced CI/CD + unit tests
+- [ ] Docker image
+- [ ] Web UI
+- [ ] Batch processing helpers
 
-## 🤝 Вклад в проект
+## 🤝 Contributing
 
-Приветствуются pull requests! Для больших изменений сначала откройте issue для обсуждения.
+Pull requests are welcome! For major changes, open an issue first to discuss what you would like to improve.
 
-### Процесс разработки
+### Development flow
 
-1. Форкните репозиторий
-2. Создайте ветку (`git checkout -b feature/amazing-feature`)
-3. Закоммитьте изменения (`git commit -m 'Add amazing feature'`)
-4. Запушьте ветку (`git push origin feature/amazing-feature`)
-5. Откройте Pull Request
+1. Fork the repository
+2. Create a branch (`git checkout -b feature/amazing-feature`)
+3. Commit (`git commit -m 'Add amazing feature'`)
+4. Push (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## 📄 Лицензия
+## 📄 License
 
-MIT License - см. файл LICENSE
+- Distributed under the MIT License — see `LICENSE` for details.
+- The codebase was developed with help from AI-assisted tools (e.g., GitHub Copilot, Codex). All code and docs were reviewed and validated manually before publishing.
 
-## 🙏 Благодарности
+## 🙏 Acknowledgements
 
-- [OpenAI Whisper](https://github.com/openai/whisper) - Транскрибирование
-- [Meta NLLB](https://github.com/facebookresearch/fairseq/tree/nllb) - Перевод
-- [Ollama](https://ollama.com) - Локальные LLM для улучшения транскрипций
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Загрузка с YouTube
+- [OpenAI Whisper](https://github.com/openai/whisper) — transcription
+- [Meta NLLB](https://github.com/facebookresearch/fairseq/tree/nllb) — translation
+- [Ollama](https://ollama.com) — local LLMs
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — YouTube downloads
 
-## 📞 Контакты
+## 📞 Contact
 
-Если у вас есть вопросы или предложения, откройте issue в репозитории.
+For questions or suggestions, please open an issue in this repository.
 
 ---
 
-## 💡 Советы по использованию
+## 💡 Usage tips
 
-### Для лучшего качества транскрипции:
-1. Используйте `whisper_medium` для важных видео
-2. Создавайте промпт-файлы с ключевыми терминами и именами
-3. Для YouTube промпт создаётся автом��тически из метаданных
+### Improve transcription quality
+1. Use `whisper_medium` for critical content
+2. Provide prompt files with key terms and names
+3. For YouTube sources, metadata-derived prompts are added automatically
 
-### Для улучшения транскрипций:
-1. Установите Ollama и модель `qwen2.5:7b` для лучшего качества
-2. Модель автоматически определит язык (русский/английский)
-3. Используйте `--refine-model` для получения чистой транскрипции
-4. **Новое в v1.1:** LLM использует оптимизированные промпты:
-   - Удаляет слова-паразиты ("um", "uh", "эм", "ну", "вот")
-   - Убирает метакомментарии ("let me scroll", "сейчас открою экран")
-   - Конвертирует числа: "twenty eight sixteen" → "2816", "ноль восемь" → "0.8"
-   - **Сохраняет ВСЕ детали**: примеры, факты, рассуждения
-   - Не суммаризирует - только очищает от шума
-   - Исправляет пунктуацию и структурирует текст
+### Improve text quality
+1. Install Ollama and pull `qwen2.5:7b` for best results
+2. Language detection switches between Russian and English automatically
+3. Use `--refine-model` to produce a clean transcript
+4. **New in v1.1:** the LLM prompt
+   - Removes filler words ("um", "uh", "эм", "ну", "вот")
+   - Skips meta commentary ("let me scroll", "сейчас открою экран")
+   - Normalises numbers ("twenty eight sixteen" → "2816", "ноль восемь" → "0.8")
+   - **Keeps every detail**: examples, facts, reasoning
+   - No summarisation — only clean-up and structuring
+   - Fixes punctuation and paragraphing
 
-### Оптимизация скорости:
-- `whisper_base` - для быстрой обработки больших объёмов
-- `whisper_medium` - для важных материалов
-- `qwen2.5:3b` - быстрое улучшение
-- `qwen2.5:7b` - качественное улучшение
+### Optimise speed
+- `whisper_base` — high throughput
+- `whisper_medium` — best accuracy
+- `qwen2.5:3b` — fast refinement
+- `qwen2.5:7b` — highest quality
 
-### Кэш моделей:
-- Whisper: `~/.cache/whisper/` (~140MB-1.5GB)
-- Ollama: управляется через `ollama list` и `ollama rm <model>`
+### Model cache locations
+- Whisper: `~/.cache/whisper/` (~140 MB – 1.5 GB)
+- Ollama: manage via `ollama list` and `ollama rm <model>`

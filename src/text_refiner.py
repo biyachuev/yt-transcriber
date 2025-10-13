@@ -684,7 +684,12 @@ Now clean this text. Return ONLY the cleaned text:
             )
 
             try:
-                refined_chunk = self._call_ollama(prompt)
+                # Route to the appropriate backend
+                if self.backend == RefineOptions.OPENAI_API:
+                    system_prompt = "You are a professional translator and editor who improves Russian translations."
+                    refined_chunk = self._call_openai(prompt, system_prompt)
+                else:
+                    refined_chunk = self._call_ollama(prompt)
 
                 # Очистка ответа от артефактов
                 refined_chunk = refined_chunk.replace("<think>", "").replace("</think>", "").strip()

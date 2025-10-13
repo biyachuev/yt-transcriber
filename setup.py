@@ -1,14 +1,14 @@
 """
-Setup script для установки пакета
+Setup script for installing the package.
 """
 from setuptools import setup, find_packages
 from pathlib import Path
 
-# Читаем README
+# Read README for long description.
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text(encoding='utf-8')
 
-# Читаем requirements
+# Load runtime requirements.
 requirements = (this_directory / "requirements.txt").read_text().splitlines()
 
 setup(
@@ -16,7 +16,7 @@ setup(
     version="1.0.0",
     author="Your Name",
     author_email="your.email@example.com",
-    description="Универсальный инструмент для транскрибирования и перевода видео",
+    description="Universal toolkit for transcribing and translating videos",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/youtube-transcriber",

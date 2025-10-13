@@ -252,7 +252,7 @@ class Transcriber:
             logger.info("Loading pyannote VAD pipeline...")
             self._vad_pipeline = Pipeline.from_pretrained(
                 "pyannote/voice-activity-detection",
-                use_auth_token=hf_token
+                token=hf_token
             )
             logger.info("VAD pipeline loaded successfully")
             return self._vad_pipeline

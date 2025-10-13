@@ -1,5 +1,5 @@
 """
-Настройка логирования
+Logging configuration helpers.
 """
 import logging
 import sys
@@ -10,34 +10,34 @@ from .config import settings
 
 def setup_logger(name: str = "youtube_transcriber") -> logging.Logger:
     """
-    Настройка логгера с выводом в консоль и файл
-    
+    Configure a logger that writes both to stdout and to a log file.
+
     Args:
-        name: Имя логгера
-        
+        name: Logger name.
+
     Returns:
-        Настроенный логгер
+        Configured logger instance.
     """
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, settings.LOG_LEVEL))
     
-    # Избегаем дублирования хендлеров
+    # Avoid adding duplicate handlers.
     if logger.handlers:
         return logger
     
-    # Формат логов
+    # Log formatting.
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
-    # Консольный хендлер
+    # Console handler.
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
     
-    # Файловый хендлер
+    # File handler.
     log_file = settings.LOGS_DIR / f"app_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setLevel(logging.DEBUG)
@@ -47,5 +47,5 @@ def setup_logger(name: str = "youtube_transcriber") -> logging.Logger:
     return logger
 
 
-# Глобальный логгер
+# Global logger instance.
 logger = setup_logger()

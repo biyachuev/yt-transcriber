@@ -83,7 +83,7 @@ class TestTextReader:
         test_file = temp_dir / "test.xyz"
         test_file.touch()
 
-        with pytest.raises(ValueError, match="Неподдерживаемый формат"):
+        with pytest.raises(ValueError, match="Unsupported file format"):
             reader.read_file(str(test_file))
 
     def test_read_file_not_found(self, reader):

@@ -1,5 +1,5 @@
 """
-Модуль для чтения текстовых файлов (docx, md)
+Utilities for reading text-based documents (DOCX, Markdown, plain text, PDF).
 """
 from pathlib import Path
 from typing import Optional
@@ -9,198 +9,220 @@ from .logger import logger
 
 
 class TextReader:
-    """Класс для чтения текстов из различных форматов"""
+    """Helper class capable of reading several common document formats."""
 
     def __init__(self):
-        """Инициализация"""
+        """Initialise the reader (no state required)."""
         pass
 
     def read_file(self, file_path: str) -> str:
         """
-        Чтение текста из файла (автоматическое определение формата)
+        Auto-detect the file type and return its textual contents.
 
         Args:
-            file_path: Путь к файлу
+            file_path: Path to the document.
 
         Returns:
-            Текст из файла
+            Extracted text.
 
         Raises:
-            ValueError: Если формат не поддерживается
-            FileNotFoundError: Если файл не найден
+            ValueError: Unsupported file type.
+            FileNotFoundError: File does not exist.
         """
         path = Path(file_path)
 
         if not path.exists():
-            raise FileNotFoundError(f"Файл не найден: {file_path}")
+            raise FileNotFoundError(f"File not found: {file_path}")
 
-        # Определяем формат по расширению
         extension = path.suffix.lower()
 
-        if extension == '.docx':
+        if extension == ".docx":
             return self.read_docx(file_path)
-        elif extension == '.md':
+        if extension == ".md":
             return self.read_markdown(file_path)
-        elif extension == '.txt':
+        if extension == ".txt":
             return self.read_text(file_path)
-        else:
-            raise ValueError(f"Неподдерживаемый формат файла: {extension}")
+        if extension == ".pdf":
+            return self.read_pdf(file_path)
+
+        raise ValueError(f"Unsupported file format: {extension}")
 
     def read_docx(self, file_path: str) -> str:
         """
-        Чтение текста из .docx файла
+        Read text from a .docx file.
 
         Args:
-            file_path: Путь к .docx файлу
+            file_path: Path to the DOCX document.
 
         Returns:
-            Текст из документа
+            Extracted text.
         """
         try:
             from docx import Document
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
-                "Для работы с .docx файлами необходима библиотека python-docx.\n"
-                "Установите её: pip install python-docx"
-            )
+                "python-docx is required to handle .docx files.\n"
+                "Install it with: pip install python-docx"
+            ) from exc
 
-        logger.info(f"Чтение .docx файла: {file_path}")
+        logger.info("Reading DOCX file: %s", file_path)
 
         try:
             doc = Document(file_path)
 
-            # Извлекаем весь текст из параграфов
             paragraphs = []
             for para in doc.paragraphs:
                 text = para.text.strip()
                 if text:
                     paragraphs.append(text)
 
-            full_text = '\n\n'.join(paragraphs)
+            full_text = "\n\n".join(paragraphs)
 
-            logger.info(f"Прочитано {len(paragraphs)} параграфов, {len(full_text)} символов")
+            logger.info("Extracted %d paragraphs, %d characters", len(paragraphs), len(full_text))
 
             return full_text
 
-        except Exception as e:
-            logger.error(f"Ошибка при чтении .docx файла: {e}")
+        except Exception as e:  # pragma: no cover
+            logger.error("Failed to read DOCX file: %s", e)
             raise
 
     def read_markdown(self, file_path: str) -> str:
         """
-        Чтение текста из .md файла (убирает markdown разметку)
+        Read text from a Markdown file and strip formatting.
 
         Args:
-            file_path: Путь к .md файлу
+            file_path: Path to the Markdown file.
 
         Returns:
-            Текст без markdown разметки
+            Plain text content.
         """
-        logger.info(f"Чтение .md файла: {file_path}")
+        logger.info("Reading Markdown file: %s", file_path)
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            # Убираем markdown разметку
             text = self._strip_markdown(content)
 
-            logger.info(f"Прочитано {len(text)} символов")
+            logger.info("Extracted %d characters", len(text))
 
             return text
 
-        except Exception as e:
-            logger.error(f"Ошибка при чтении .md файла: {e}")
+        except Exception as e:  # pragma: no cover
+            logger.error("Failed to read Markdown file: %s", e)
             raise
 
     def read_text(self, file_path: str) -> str:
         """
-        Чтение текста из .txt файла
+        Read a UTF-8 encoded plain text file.
 
         Args:
-            file_path: Путь к .txt файлу
+            file_path: Path to the file.
 
         Returns:
-            Текст из файла
+            Text content.
         """
-        logger.info(f"Чтение .txt файла: {file_path}")
+        logger.info("Reading text file: %s", file_path)
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            logger.info(f"Прочитано {len(content)} символов")
+            logger.info("Extracted %d characters", len(content))
 
             return content
 
-        except Exception as e:
-            logger.error(f"Ошибка при чтении .txt файла: {e}")
+        except Exception as e:  # pragma: no cover
+            logger.error("Failed to read text file: %s", e)
             raise
 
     def _strip_markdown(self, markdown_text: str) -> str:
         """
-        Убирает markdown разметку из текста
+        Remove Markdown formatting from the provided text.
 
         Args:
-            markdown_text: Текст с markdown разметкой
+            markdown_text: Markdown content.
 
         Returns:
-            Чистый текст
+            Cleaned plain text.
         """
         text = markdown_text
 
-        # Убираем заголовки (# ## ###)
-        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-
-        # Убираем код блоки
-        text = re.sub(r'```[\s\S]*?```', '', text)
-        text = re.sub(r'`[^`]+`', '', text)
-
-        # Убираем жирный текст и курсив
-        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
-        text = re.sub(r'__([^_]+)__', r'\1', text)
-        text = re.sub(r'\*([^*]+)\*', r'\1', text)
-        text = re.sub(r'_([^_]+)_', r'\1', text)
-
-        # Убираем ссылки [text](url) → text
-        text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
-
-        # Убираем изображения ![alt](url)
-        text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', '', text)
-
-        # Убираем списки (- * +)
-        text = re.sub(r'^[\s]*[-*+]\s+', '', text, flags=re.MULTILINE)
-
-        # Убираем нумерованные списки
-        text = re.sub(r'^[\s]*\d+\.\s+', '', text, flags=re.MULTILINE)
-
-        # Убираем горизонтальные линии
-        text = re.sub(r'^[\s]*[-*_]{3,}[\s]*$', '', text, flags=re.MULTILINE)
-
-        # Убираем blockquotes
-        text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
-
-        # Убираем множественные пустые строки
-        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+        text = re.sub(r"```[\s\S]*?```", "", text)
+        text = re.sub(r"`[^`]+`", "", text)
+        text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+        text = re.sub(r"__([^_]+)__", r"\1", text)
+        text = re.sub(r"\*([^*]+)\*", r"\1", text)
+        text = re.sub(r"_([^_]+)_", r"\1", text)
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+        text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", "", text)
+        text = re.sub(r"^[\s]*[-*+]\s+", "", text, flags=re.MULTILINE)
+        text = re.sub(r"^[\s]*\d+\.\s+", "", text, flags=re.MULTILINE)
+        text = re.sub(r"^[\s]*[-*_]{3,}[\s]*$", "", text, flags=re.MULTILINE)
+        text = re.sub(r"^>\s+", "", text, flags=re.MULTILINE)
+        text = re.sub(r"\n{3,}", "\n\n", text)
 
         return text.strip()
 
-    def detect_language(self, text: str) -> str:
+    def read_pdf(self, file_path: str) -> str:
         """
-        Определение языка текста (простое эвристическое определение)
+        Extract text from a PDF file.
 
         Args:
-            text: Текст для определения языка
+            file_path: Path to the PDF document.
 
         Returns:
-            'ru' для русского, 'en' для английского
+            Extracted text content.
         """
-        # Считаем кириллицу
-        cyrillic_chars = sum(1 for c in text if '\u0400' <= c <= '\u04FF')
+        try:
+            import PyPDF2
+        except ImportError as exc:
+            raise ImportError(
+                "PyPDF2 is required to process PDF documents.\n"
+                "Install it with: pip install PyPDF2"
+            ) from exc
+
+        logger.info("Reading PDF file: %s", file_path)
+
+        try:
+            with open(file_path, "rb") as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                text_parts = []
+
+                for page_num in range(len(pdf_reader.pages)):
+                    page = pdf_reader.pages[page_num]
+                    text = page.extract_text()
+                    if text and text.strip():
+                        text_parts.append(text.strip())
+
+                full_text = "\n\n".join(text_parts)
+
+                if not full_text.strip():
+                    logger.warning("PDF file appears empty or text extraction failed")
+                    return ""
+
+                logger.info("Extracted %d pages from PDF", len(text_parts))
+                return full_text
+
+        except Exception as e:  # pragma: no cover
+            logger.error("Failed to read PDF file: %s", e)
+            raise
+
+    def detect_language(self, text: str) -> str:
+        """
+        Simple heuristic-based language detection.
+
+        Args:
+            text: Text to analyse.
+
+        Returns:
+            'ru' for Russian, 'en' for English.
+        """
+        cyrillic_chars = sum(1 for c in text if "\u0400" <= c <= "\u04FF")
         total_chars = sum(1 for c in text if c.isalpha())
 
         if total_chars == 0:
-            return 'en'
+            return "en"
 
-        # Если больше 30% кириллицы - считаем русским
-        return 'ru' if (cyrillic_chars / total_chars) > 0.3 else 'en'
+        return "ru" if (cyrillic_chars / total_chars) > 0.3 else "en"

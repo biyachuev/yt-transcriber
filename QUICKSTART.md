@@ -1,157 +1,140 @@
-# Быстрый старт
+# Quick Start
 
-Пошаговое руководство для начала работы с YouTube Transcriber за 5 минут.
+Get up and running with YouTube Transcriber in five minutes.
 
-## ⚡ Установка за 3 шага
+## ⚡ Install in 3 steps
 
-### Шаг 1: Клонирование и создание окружения
+### Step 1: clone and create a virtual environment
 
 ```bash
-# Клонируем репозиторий
+# Clone the repository
 git clone <repository-url>
 cd youtube-transcriber
 
-# Создаем виртуальное окружение
+# Create a virtual environment
 python -m venv venv
 
-# Активируем (macOS/Linux)
+# Activate (macOS/Linux)
 source venv/bin/activate
 
-# Активируем (Windows)
+# Activate (Windows)
 # venv\Scripts\activate
 ```
 
-### Шаг 2: Установка FFmpeg
+### Step 2: install FFmpeg
 
-**macOS:**
+**macOS**
 ```bash
 brew install ffmpeg
 ```
 
-**Linux (Ubuntu):**
+**Linux (Ubuntu)**
 ```bash
 sudo apt update && sudo apt install ffmpeg
 ```
 
-**Windows:**
-- Скачайте с [ffmpeg.org](https://ffmpeg.org/download.html)
-- Добавьте в PATH
+**Windows**
+1. Download a build from [ffmpeg.org](https://ffmpeg.org/download.html)
+2. Add the `bin` folder to `PATH`
 
-### Шаг 3: Установка зависимостей Python
+### Step 3: install Python dependencies
 
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-⏱️ **Это займет 5-10 минут**
+⏱️ Expect 5–10 minutes on first setup.
 
 ---
 
-## 🚀 Первый запуск
+## 🚀 First run
 
-### Простой тест
+### Smoke test
 
 ```bash
-python -m src.main \
-    --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" \
-    --transcribe whisper_base
+python -m src.main     --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ"     --transcribe whisper_base
 ```
 
-**Что произойдет:**
-1. ⬇️ Скачается аудио с YouTube
-2. 📝 Создастся расшифровка
-3. 💾 Результат сохранится в `output/`
+What happens:
+1. ⬇️ Audio is downloaded from YouTube
+2. 📝 The transcript is generated
+3. 💾 Results land in `output/`
 
-⏱️ **Первый запуск займет дольше** (загрузка моделей ~2-3GB)
+⏱️ First run is slower because models (~2–3 GB) are downloaded.
 
 ---
 
-### С переводом
+### Add translation
 
 ```bash
-python -m src.main \
-    --url "https://www.youtube.com/watch?v=YOUR_VIDEO" \
-    --transcribe whisper_base \
-    --translate NLLB
+python -m src.main     --url "https://www.youtube.com/watch?v=YOUR_VIDEO"     --transcribe whisper_base     --translate NLLB
 ```
 
-**Результат:**
-- `output/Video_Title.docx` - документ Word
-- `output/Video_Title.md` - Markdown файл
+Output:
+- `output/Video_Title.docx` — Word document
+- `output/Video_Title.md` — Markdown document
 
-Оба содержат:
-1. Перевод на русский (если видео на английском)
-2. Оригинальную расшифровку
-3. Таймкоды для каждого абзаца
+Both contain:
+1. Russian translation (if the original is in English)
+2. Original transcript
+3. Timestamps for each paragraph
 
 ---
 
-## 📋 Основные команды
+## 📋 Essential commands
 
-### Просмотр справки
-
+### Show help
 ```bash
 python -m src.main --help
 ```
 
-### Только транскрибирование
-
+### Transcribe only
 ```bash
 python -m src.main --url "URL" --transcribe whisper_base
 ```
 
-### Транскрибирование + перевод
-
+### Transcribe + translate
 ```bash
 python -m src.main --url "URL" --transcribe whisper_base --translate NLLB
 ```
 
 ---
 
-## 📁 Где найти результаты?
+## 📁 Where to find results
 
 ```
 youtube-transcriber/
-├── output/              # ← Здесь ваши результаты!
+├── output/              # ← Processed documents
 │   ├── Video_Title.docx
 │   └── Video_Title.md
-├── temp/                # Временные файлы (аудио)
-└── logs/                # Логи работы
+├── temp/                # Temporary audio
+└── logs/                # Execution logs
 ```
 
 ---
 
-## 🎯 Типичные сценарии
+## 🎯 Typical scenarios
 
-### Сценарий 1: Английская лекция
-
+### Scenario 1: English lecture
 ```bash
-python -m src.main \
-    --url "https://youtube.com/watch?v=..." \
-    --transcribe whisper_base \
-    --translate NLLB
+python -m src.main     --url "https://youtube.com/watch?v=..."     --transcribe whisper_base     --translate NLLB
 ```
-
-**Получите:** Расшифровку + русский перевод
+Result: transcript + Russian translation
 
 ---
 
-### Сценарий 2: Русское видео
-
+### Scenario 2: Russian video
 ```bash
-python -m src.main \
-    --url "https://youtube.com/watch?v=..." \
-    --transcribe whisper_base
+python -m src.main     --url "https://youtube.com/watch?v=..."     --transcribe whisper_base
 ```
-
-**Получите:** Только расшифровку (перевод не нужен)
+Result: transcript only
 
 ---
 
-### Сценарий 3: Несколько видео
+### Scenario 3: Process multiple videos
 
-Создайте скрипт `process_videos.sh`:
+Create `process_videos.sh`:
 
 ```bash
 #!/bin/bash
@@ -160,10 +143,10 @@ python -m src.main --url "https://youtube.com/watch?v=VIDEO1" --transcribe whisp
 python -m src.main --url "https://youtube.com/watch?v=VIDEO2" --transcribe whisper_base --translate NLLB
 python -m src.main --url "https://youtube.com/watch?v=VIDEO3" --transcribe whisper_base --translate NLLB
 
-echo "Готово!"
+echo "Done!"
 ```
 
-Запустите:
+Run it:
 ```bash
 chmod +x process_videos.sh
 ./process_videos.sh
@@ -171,107 +154,103 @@ chmod +x process_videos.sh
 
 ---
 
-## ⚙️ Настройка (опционально)
+## ⚙️ Optional configuration
 
-### Создание .env файла
+### Create a `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-Отредактируйте `.env`:
+Edit `.env`:
 ```bash
-# Уровень детализации логов
-LOG_LEVEL=INFO  # или DEBUG для отладки
-
-# Устройство для вычислений
-WHISPER_DEVICE=mps  # mps (M1/M2), cuda (NVIDIA), cpu
+LOG_LEVEL=INFO    # or DEBUG for verbose logging
+WHISPER_DEVICE=mps  # mps (M1/M2), cuda (NVIDIA), or cpu
 ```
 
 ---
 
-## 🐛 Решение проблем
+## 🐛 Troubleshooting
 
-### Ошибка: "FFmpeg not found"
-
+### “FFmpeg not found”
 ```bash
-# Проверьте установку
-ffmpeg -version
-
-# Если не установлен, установите (см. Шаг 2 выше)
+ffmpeg -version  # should print version info
+# If missing, install FFmpeg (see Step 2)
 ```
 
 ---
 
-### Ошибка: "Out of memory"
+### “Out of memory”
 
-**Решение:** Закройте другие приложения или используйте:
+Use a lighter model:
 ```bash
-# Более легкая модель
---transcribe whisper_base  # вместо whisper_small
+--transcribe whisper_base
+```
+
+Or split the audio:
+```bash
+ffmpeg -i long_video.mp3 -ss 00:00:00 -t 01:00:00 part1.mp3
 ```
 
 ---
 
-### Модели долго загружаются
+### Models take a long time to download
 
-**Это нормально!** При первом запуске загружаются:
-- Whisper Base: ~150MB
-- NLLB: ~2.5GB
+Expected on first run:
+- Whisper Base ~150 MB
+- NLLB ~2.5 GB
 
-Они кешируются в `models/` и больше не загружаются.
-
----
-
-### Медленная работа
-
-**Это нормально для CPU!** Транскрибирование идет примерно в реальном времени:
-- 1 час видео = 1-1.5 часа обработки
-
-**Ускорить можно:**
-1. Использовать GPU (если есть)
-2. Запускать на ночь
-3. Обрабатывать видео меньшей длины
+They are cached in `models/` afterwards.
 
 ---
 
-## 📊 Ожидаемое время
+### Processing feels slow
 
-| Видео | Обработка (M1, 16GB) |
-|-------|----------------------|
-| 10 мин | ~18 мин |
-| 30 мин | ~55 мин |
-| 1 час | ~110 мин |
-| 2 часа | ~220 мин |
+CPU-only processing runs close to realtime:
+- 1 hour of video ≈ 1–1.5 hours processing
 
----
-
-## 🎓 Следующие шаги
-
-Теперь вы готовы! Вот что можно изучить дальше:
-
-1. 📖 [README.md](README.md) - Полная документация
-2. 💡 [EXAMPLES.md](EXAMPLES.md) - Больше примеров использования
-3. ❓ [FAQ.md](FAQ.md) - Ответы на частые вопросы
-4. 🐳 Docker - Запуск в контейнере (см. README)
+Speedups:
+1. Use a GPU if available
+2. Run overnight for long batches
+3. Process shorter clips
 
 ---
 
-## 💬 Нужна помощь?
+## 📊 Expected duration (M1, 16 GB)
 
-- 📚 Проверьте [FAQ.md](FAQ.md)
-- 🐛 Откройте [issue на GitHub](https://github.com/yourusername/youtube-transcriber/issues)
-- 📧 Свяжитесь с разработчиками
+| Video length | Approx. time |
+|--------------|--------------|
+| 10 min       | ~18 min |
+| 30 min       | ~55 min |
+| 1 hour       | ~110 min |
+| 2 hours      | ~220 min |
 
 ---
 
-## ✅ Чеклист готовности
+## 🎓 Next steps
 
-- [ ] Python 3.9+ установлен
-- [ ] FFmpeg установлен и работает
-- [ ] Виртуальное окружение создано и активировано
-- [ ] Зависимости установлены (`pip install -r requirements.txt`)
-- [ ] Первый тестовый запуск выполнен успешно
-- [ ] Результаты найдены в папке `output/`
+1. 📖 [README.md](README.md) — full documentation
+2. 💡 [EXAMPLES.md](EXAMPLES.md) — more scenarios
+3. ❓ [FAQ.md](FAQ.md) — troubleshooting and tips
+4. 🐳 Docker instructions in README for containerised runs
 
-**Все готово? Отлично! Начинайте обрабатывать свои видео! 🎉**
+---
+
+## 💬 Need help?
+
+- Check the [FAQ](FAQ.md)
+- Open an [issue on GitHub](https://github.com/yourusername/youtube-transcriber/issues)
+- Reach out to the maintainers
+
+---
+
+## ✅ Readiness checklist
+
+- [ ] Python 3.9+ installed
+- [ ] FFmpeg installed and on PATH
+- [ ] Virtual environment created and activated
+- [ ] Dependencies installed (`pip install -r requirements.txt`)
+- [ ] First test run completed
+- [ ] Results located in `output/`
+
+All set? Great — start processing your videos! 🎉

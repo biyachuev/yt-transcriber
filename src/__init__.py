@@ -1,6 +1,6 @@
 """
 YouTube Transcriber & Translator
-Универсальный инструмент для транскрибирования и перевода видео
+Universal toolkit for transcribing and translating videos.
 """
 
 __version__ = "1.0.0"

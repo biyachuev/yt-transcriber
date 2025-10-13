@@ -1,144 +1,144 @@
-# Часто задаваемые вопросы (FAQ)
+# Frequently Asked Questions (FAQ)
 
-## Общие вопросы
+## General
 
-### Что делает этот инструмент?
+### What does this tool do?
 
-YouTube Transcriber & Translator - это инструмент для автоматического создания текстовых расшифровок видео с YouTube и локальных аудиофайлов, их улучшения с помощью LLM и перевода на русский язык. Он использует модели Whisper для транскрибирования, локальные LLM (через Ollama) для улучшения текста и NLLB для перевода.
-
----
-
-### Какие языки поддерживаются?
-
-**Текущая версия:**
-- Транскрибирование: Русский и английский (автоопределение)
-- Перевод: Английский → Русский
-- Улучшение LLM: Русский и английский
-
-**Доступные модели Whisper:**
-- `whisper_base` - быстро, хорошее качество
-- `whisper_small` - медленнее, лучше качество  
-- `whisper_medium` - медленно, высокое качество
-
-**Будущие версии:**
-- Расширенная поддержка языков через NLLB (200+ языков)
+YouTube Transcriber & Translator automatically creates transcripts for YouTube videos and local audio files, optionally polishes them with an LLM, and translates them into Russian. It relies on Whisper for transcription, local LLMs via Ollama for refinement, and Meta NLLB for translation.
 
 ---
 
-### Бесплатно ли это?
+### Which languages are supported?
 
-Да! Текущая версия полностью бесплатна и работает локально на вашем компьютере. Все модели (Whisper, NLLB) загружаются и выполняются локально.
+**Current release**
+- Transcription: Russian and English (auto-detected)
+- Translation: English → Russian
+- LLM refinement: Russian and English
 
-**Дополнительные возможности:**
-- LLM улучшение через Ollama (бесплатно, но требует установки Ollama)
-- Пользовательские промпты для улучшения качества (бесплатно)
+**Available Whisper models**
+- `whisper_base` — fast, good quality
+- `whisper_small` — slower, better quality
+- `whisper_medium` — slowest, best quality
 
-**Примечание:** Будущие версии будут включать опциональную интеграцию с OpenAI API (платно).
+**Roadmap**
+- Broader language pairs via NLLB (200+ languages)
 
 ---
 
-## Технические вопросы
+### Is the tool free?
 
-### Какие требования к железу?
+Yes. The current version runs fully on your machine. All models (Whisper, NLLB) are downloaded and executed locally.
 
-**Минимальные:**
-- 8GB RAM
-- 5GB свободного места (для моделей)
+**Optional extras**
+- LLM refinement through Ollama (free, requires installing Ollama)
+- Custom prompts for better term recognition
+
+**Note:** Future versions may add optional OpenAI API integration (paid usage).
+
+---
+
+## Technical
+
+### What are the hardware requirements?
+
+**Minimum**
+- 8 GB RAM
+- 5 GB of free disk space (models)
 - Python 3.9+
 
-**Рекомендуемые:**
-- 16GB RAM
-- 10GB свободного места
-- Apple M1/M2 или NVIDIA GPU (опционально)
+**Recommended**
+- 16 GB RAM
+- 10 GB free space
+- Apple M1/M2 or an NVIDIA GPU (optional)
 
-**Для LLM улучшения (Ollama):**
-- Дополнительно 4-8GB RAM (в зависимости от модели)
-- Ollama установлен и запущен
+**For LLM refinement (Ollama)**
+- Additional 4–8 GB RAM, depending on the model
+- Ollama installed and running
 
 ---
 
-### Работает ли на Windows/Linux?
+### Does it run on Windows/Linux?
 
-Да! Инструмент кроссплатформенный:
-- ✅ macOS (включая M1/M2)
+Yes, the tool is cross-platform:
+- ✅ macOS (including M1/M2)
 - ✅ Linux
 - ✅ Windows
 
 ---
 
-### Нужен ли GPU?
+### Do I need a GPU?
 
-Нет, GPU не обязателен. Инструмент работает на CPU, но:
-- **С GPU:** Быстрее в 3-5 раз
-- **Без GPU:** Работает, но медленнее
+No. The app works on CPU. A GPU simply speeds things up:
+- **With GPU:** roughly 3–5× faster
+- **Without GPU:** works fine, just slower
 
-На Apple M1/M2 автоматически используется встроенный Neural Engine (MPS).
-
----
-
-### Сколько времени занимает обработка?
-
-**Приблизительное время (MacBook Air M1, 16GB):**
-
-**Базовая обработка (whisper_base + NLLB):**
-| Длительность видео | Транскрибирование | Перевод | Итого |
-|--------------------|-------------------|---------|-------|
-| 10 минут | ~15 мин | ~3 мин | ~18 мин |
-| 30 минут | ~45 мин | ~10 мин | ~55 мин |
-| 1 час | ~90 мин | ~20 мин | ~110 мин |
-| 2 часа | ~180 мин | ~40 мин | ~220 мин |
-
-**С улучшением LLM (whisper_medium + qwen2.5:3b + NLLB):**
-| Длительность видео | Транскрибирование | Улучшение | Перевод | Итого |
-|--------------------|-------------------|-----------|---------|-------|
-| 10 минут | ~45 мин | ~5 мин | ~3 мин | ~53 мин |
-| 30 минут | ~135 мин | ~15 мин | ~10 мин | ~160 мин |
-| 1 час | ~270 мин | ~30 мин | ~20 мин | ~320 мин |
-
-**На более мощном железе время может быть меньше.**
+On Apple Silicon the MPS backend is used automatically.
 
 ---
 
-### Насколько точна транскрипция?
+### How long does processing take?
 
-Точность зависит от:
-- **Качества аудио:** Чистое аудио = лучше результат
-- **Акцента:** Стандартное произношение = выше точность
-- **Фонового шума:** Меньше шума = лучше
-- **Модели:** Base (хорошо) vs Small (лучше) vs Medium (отлично)
-- **Промпта:** Пользовательский промпт улучшает распознавание терминов
+Approximate timings on a MacBook Air M1 (16 GB):
 
-**Типичная точность:**
-- Чистое аудио, стандартный акцент: 90-95%
-- Аудио с шумом: 70-85%
-- Сильный акцент: 60-80%
+**Baseline (whisper_base + NLLB)**
+| Video length | Transcription | Translation | Total |
+|--------------|---------------|-------------|-------|
+| 10 min       | ~15 min       | ~3 min      | ~18 min |
+| 30 min       | ~45 min       | ~10 min     | ~55 min |
+| 1 hour       | ~90 min       | ~20 min     | ~110 min |
+| 2 hours      | ~180 min      | ~40 min     | ~220 min |
 
-**С LLM улучшением:**
-- Автоматическое исправление пунктуации
-- Удаление слов-паразитов
-- Улучшение структуры текста
-- Исправление терминологии
+**With LLM refinement (whisper_medium + qwen2.5:3b + NLLB)**
+| Video length | Transcription | Refinement | Translation | Total |
+|--------------|---------------|------------|-------------|-------|
+| 10 min       | ~45 min       | ~5 min     | ~3 min      | ~53 min |
+| 30 min       | ~135 min      | ~15 min    | ~10 min     | ~160 min |
+| 1 hour       | ~270 min      | ~30 min    | ~20 min     | ~320 min |
 
----
-
-### Насколько точен перевод?
-
-NLLB обеспечивает хорошее качество перевода, но:
-- ✅ Общий смысл передается точно
-- ⚠️ Технические термины могут требовать проверки
-- ⚠️ Идиомы могут переводиться буквально
-
-Рекомендуется проверять перевод технических терминов вручную.
+More powerful hardware will reduce these numbers.
 
 ---
 
-## Проблемы и решения
+### How accurate is the transcription?
 
-### "FFmpeg not found"
+Accuracy depends on:
+- **Audio quality:** cleaner audio produces better results
+- **Speaker accent:** neutral accents are easier to transcribe
+- **Background noise:** less noise → higher accuracy
+- **Model choice:** Base (good) vs Small (better) vs Medium (best)
+- **Prompt quality:** custom prompts improve terminology recognition
 
-**Проблема:** FFmpeg не установлен или не найден в PATH.
+**Typical accuracy**
+- Clean audio, standard accent: 90–95%
+- Noisy environments: 70–85%
+- Heavy accent: 60–80%
 
-**Решение:**
+**LLM refinement adds**
+- Better punctuation
+- Removal of filler words
+- Improved structure
+- Terminology fixes
+
+---
+
+### How accurate is the translation?
+
+NLLB delivers solid quality:
+- ✅ Meaning is preserved
+- ⚠️ Technical jargon may need review
+- ⚠️ Idioms can translate literally
+
+Always proofread technical translations.
+
+---
+
+## Troubleshooting
+
+### “FFmpeg not found”
+
+**Cause:** FFmpeg is missing or not on PATH.
+
+**Fix:**
 ```bash
 # macOS
 brew install ffmpeg
@@ -147,377 +147,101 @@ brew install ffmpeg
 sudo apt install ffmpeg
 
 # Windows
-# Скачайте с ffmpeg.org и добавьте в PATH
+# Download from ffmpeg.org and add to PATH
 ```
 
 ---
 
-### "Out of memory" ошибка
+### “Out of memory”
 
-**Проблема:** Недостаточно RAM для обработки.
+**Cause:** insufficient RAM.
 
-**Решения:**
-1. Закройте другие приложения
-2. Используйте `whisper_base` вместо `whisper_small`
-3. Обработайте видео по частям
+**Fixes:**
+1. Close unused applications
+2. Switch to `whisper_base`
+3. Split long videos into chunks
 
 ```bash
-# Разделите длинное видео
 ffmpeg -i long_video.mp3 -ss 00:00:00 -t 01:00:00 part1.mp3
 ```
 
 ---
 
-### Модели долго загружаются
+### Models take forever to download
 
-**Проблема:** Первый запуск загружает модели (~2-3GB).
+**Cause:** first run downloads large weights (2–3 GB).
 
-**Решение:** Это нормально! Модели загружаются один раз и кешируются в папке `models/`:
-- Whisper Base: ~150MB
-- NLLB: ~2.5GB
+**Fix:** expected behaviour — models are cached in `models/`:
+- Whisper Base: ~150 MB
+- NLLB: ~2.5 GB
 
-При последующих запусках загрузка не требуется.
+Subsequent runs reuse the cache.
 
 ---
 
-### "CUDA out of memory" на GPU
+### “CUDA out of memory”
 
-**Проблема:** GPU памяти недостаточно.
+**Cause:** GPU memory is insufficient.
 
-**Решение:** Принудительно используйте CPU:
+**Fix:** force CPU usage:
 ```bash
-# В .env файле
+# .env
 WHISPER_DEVICE=cpu
 ```
 
 ---
 
-### Видео не скачивается с YouTube
+### YouTube download fails
 
-**Возможные причины:**
-1. Видео приватное или недоступно
-2. Проблемы с интернетом
-3. YouTube изменил API
+**Possible reasons**
+1. The video is private or geo-blocked
+2. Network connectivity issues
+3. YouTube changed the API (yt-dlp update needed)
 
-**Решения:**
+**Fixes**
+- Verify the URL in a browser
+- Update yt-dlp (`pip install -U yt-dlp`)
+- Try again later; the community patch cycle is quick
+
+---
+
+### Whisper errors on Apple Silicon
+
+**Cause:** MPS backend lacks Sparse tensor ops.
+
+**Fix:** the app falls back to CPU automatically. To enforce it:
 ```bash
-# Обновите yt-dlp
-pip install --upgrade yt-dlp
-
-# Попробуйте скачать вручную
-yt-dlp -x --audio-format mp3 "VIDEO_URL"
-
-# Затем используйте --input_audio (будет в v1.1)
+WHISPER_DEVICE=cpu
 ```
 
 ---
 
-### Плохое качество транскрипции
+### Ollama server is unreachable
 
-**Возможные причины:**
-1. Плохое качество аудио
-2. Сильный акцент
-3. Фоновый шум
-4. Музыка в фоне
-
-**Решения:**
-1. Улучшите аудио:
+**Fix:**
 ```bash
-# Шумоподавление
-ffmpeg -i input.mp3 -af "highpass=f=200,lowpass=f=3000" clean.mp3
+ollama serve
+curl http://localhost:11434/api/tags
 ```
 
-2. Используйте лучшую модель (будет в v1.1):
-```bash
---transcribe whisper_small
-```
+Ensure the desired model is pulled (`ollama pull qwen2.5:3b`).
 
 ---
 
-### Неправильный язык определен
+### Where are logs and outputs saved?
 
-**Проблема:** Автоопределение ошиблось.
-
-**Решение (будет в v1.1):**
-```bash
-# Явно укажите язык
-python -m src.main --url "..." --transcribe whisper_base --language ru
-```
+- Transcripts & translations: `output/`
+- Temporary audio/files: `temp/`
+- Logs: `logs/`
 
 ---
 
-## Использование
+### Can I use the tool for commercial projects?
 
-### Можно ли обрабатывать приватные видео?
-
-Нет, инструмент работает только с публично доступными видео на YouTube. Для приватных видео:
-1. Скачайте аудио вручную
-2. Используйте `--input_audio` (будет в v1.1)
+The CLI itself is under MIT, but the default NLLB model is CC BY-NC 4.0 (non-commercial). For commercial use either:
+- Switch to a commercially licensed translation model, or
+- Obtain permission from Meta/third-party providers.
 
 ---
 
-### Можно ли обрабатывать не-YouTube видео?
-
-**Текущая версия:** Поддержка локальных аудиофайлов:
-```bash
-python -m src.main --input_audio my_audio.mp3 --transcribe whisper_base
-```
-
-**Поддерживаемые форматы:** mp3, wav, m4a, flac, ogg
-
-**Примеры использования:**
-```bash
-# Обработка подкаста
-python -m src.main --input_audio podcast.mp3 --transcribe whisper_medium --refine-model qwen2.5:3b
-
-# Обработка с переводом
-python -m src.main --input_audio lecture.mp3 --transcribe whisper_medium --translate NLLB --refine-model qwen2.5:3b
-```
-
----
-
-### Можно ли переводить с русского на английский?
-
-**Текущая версия:** Только английский → русский.
-
-**Будущие версии:** Двусторонний перевод и другие языковые пары.
-
----
-
-### Сохраняются ли временные файлы?
-
-Да! По дизайну все временные файлы сохраняются в папке `temp/`:
-- Скачанное аудио
-- Промежуточные результаты
-
-Это полезно для отладки и повторного использования.
-
----
-
-### Как удалить временные файлы?
-
-```bash
-# Удалить все временные файлы
-rm -rf temp/*
-
-# Удалить старые логи
-rm logs/app_*.log
-```
-
-Или добавьте в скрипт автоматическую очистку:
-```bash
-# Очистка файлов старше 7 дней
-find temp/ -type f -mtime +7 -delete
-```
-
----
-
-## Новые возможности
-
-### Что такое LLM улучшение?
-
-LLM улучшение - это новая возможность улучшения транскрипции с помощью локальных языковых моделей через Ollama. После транскрибирования Whisper текст обрабатывается LLM для:
-
-- Исправления пунктуации
-- Удаления слов-паразитов ("э-э", "ну", "короче")
-- Улучшения структуры текста
-- Исправления терминологии
-- Разделения на абзацы
-
-**Результат:** Создаются два документа - оригинальная и улучшенная версии.
-
----
-
-### Как настроить Ollama для улучшения?
-
-1. **Установите Ollama:** https://ollama.ai
-2. **Загрузите модель:**
-   ```bash
-   ollama pull qwen2.5:3b  # Рекомендуемая быстрая модель
-   ollama pull llama3:8b   # Качественная модель
-   ```
-3. **Запустите сервер:**
-   ```bash
-   ollama serve
-   ```
-4. **Используйте в команде:**
-   ```bash
-   python -m src.main --url "..." --transcribe whisper_medium --refine-model qwen2.5:3b
-   ```
-
----
-
-### Какие модели Ollama рекомендуются?
-
-**Быстрые модели (3B параметров):**
-- `qwen2.5:3b` - отлично для русского и английского
-- `llama3.2:3b` - хорошее качество
-
-**Качественные модели (7-8B параметров):**
-- `llama3:8b` - высокое качество
-- `mistral:7b` - хороший баланс
-
-**НЕ рекомендуется:**
-- `qwen3:4b` - использует "chain of thought" и работает очень медленно
-
----
-
-### Что такое пользовательский промпт?
-
-Промпт - это текстовый файл с ключевыми словами, которые помогают Whisper правильно распознавать специфичные термины:
-
-**Пример prompt.txt:**
-```
-FIDE, Hikaru Nakamura, Magnus Carlsen, chess tournament, bongcloud
-```
-
-**Использование:**
-```bash
-python -m src.main --url "..." --transcribe whisper_base --prompt prompt.txt
-```
-
-**Когда использовать:**
-- Технические лекции с терминологией
-- Интервью с именами собственными
-- Специализированные темы
-
----
-
-### Какие модели Whisper доступны?
-
-**whisper_base** (74M параметров):
-- Быстро, хорошее качество
-- Рекомендуется для быстрой обработки
-
-**whisper_small** (244M параметров):
-- Медленнее, лучше качество
-- Хороший баланс скорость/качество
-
-**whisper_medium** (769M параметров):
-- Медленно, высокое качество
-- Рекомендуется для важных материалов
-
----
-
-## Производительность
-
-### Можно ли ускорить обработку?
-
-**Способы ускорения:**
-
-1. **Используйте GPU** (если доступен):
-```bash
-# В .env
-WHISPER_DEVICE=cuda  # для NVIDIA GPU
-```
-
-2. **Выберите подходящую модель:**
-```bash
---transcribe whisper_base  # быстрее всего
---transcribe whisper_small  # баланс
---transcribe whisper_medium  # качество
-```
-
-3. **Используйте быстрые LLM модели:**
-```bash
---refine-model qwen2.5:3b  # быстрая
---refine-model llama3.2:3b  # быстрая
-```
-
-4. **Обрабатывайте ночью:**
-```bash
-# Запустите и идите спать
-nohup python -m src.main --url "..." --transcribe whisper_medium --refine-model qwen2.5:3b &
-```
-
----
-
-### Можно ли обрабатывать несколько видео параллельно?
-
-**Текущая версия:** Нет, обрабатывается по одному.
-
-**Обходной путь:** Запустите несколько экземпляров в разных терминалах (только если достаточно RAM).
-
-**Рекомендации:**
-- Для базовой обработки: можно запускать 2-3 экземпляра
-- С LLM улучшением: лучше по одному (требует много RAM)
-
----
-
-### Влияет ли длина видео на качество?
-
-Нет, длина видео не влияет на качество транскрипции или перевода. Влияет только время обработки.
-
----
-
-## Данные и конфиденциальность
-
-### Отправляются ли данные куда-то?
-
-**MVP:** Нет! Все обрабатывается локально:
-- Модели локальные
-- Нет отправки данных
-- Нет телеметрии
-
-**Исключения:**
-- Скачивание видео с YouTube (через yt-dlp)
-- Загрузка моделей при первом запуске
-
----
-
-### Можно ли использовать офлайн?
-
-Почти! После первого запуска:
-- ✅ Транскрибирование работает офлайн
-- ✅ Перевод работает офлайн
-- ❌ Скачивание новых видео требует интернет
-
-**Обходной путь:** Скачайте аудио заранее с интернетом, затем обрабатывайте офлайн.
-
----
-
-## Разработка
-
-### Как внести вклад в проект?
-
-См. [CONTRIBUTING.md](CONTRIBUTING.md)
-
----
-
-### Планируются ли новые функции?
-
-Да! См. [Roadmap в README.md](README.md#roadmap)
-
-**Уже реализовано:**
-1. ✅ Обработка локальных аудиофайлов
-2. ✅ Улучшенные модели Whisper (small, medium)
-3. ✅ LLM улучшение через Ollama
-4. ✅ Пользовательские промпты
-
-**Планируется:**
-1. v1.2: Обработка текстовых файлов
-2. v1.2: Явное указание языка
-3. v2.0: OpenAI API интеграция
-4. v2.0: Speaker diarization
-5. v2.0: Web интерфейс
-
----
-
-### Можно ли использовать в коммерческих целях?
-
-Да, проект под MIT лицензией. Однако:
-- ✅ Код можно использовать коммерчески
-- ⚠️ Проверьте лицензии моделей (Whisper, NLLB)
-- ⚠️ Соблюдайте Terms of Service YouTube
-
----
-
-## Все еще есть вопросы?
-
-1. Проверьте [README.md](README.md)
-2. Посмотрите [примеры использования](EXAMPLES.md)
-3. Откройте [issue на GitHub](https://github.com/yourusername/youtube-transcriber/issues)
-
----
-
-**Последнее обновление:** Январь 2025
+Still stuck? Open an issue on GitHub — happy to help.

@@ -169,12 +169,59 @@ Notes:
     print(help_text)
 
 
+def _generate_summary(
+    title: str,
+    segments: list[dict],
+    summarize_model: str,
+    summarize_backend: str
+) -> None:
+    """
+    Generate and save a summary of the text.
+
+    Args:
+        title: Base title for the output file.
+        segments: List of text segments to summarize.
+        summarize_model: Model to use for summarization.
+        summarize_backend: Backend to use (ollama or openai_api).
+    """
+    logger.info("\n[Final] Generating summary with %s...", summarize_model)
+    try:
+        from .summarizer import Summarizer
+        from .config import settings
+        from .translator import detect_language
+
+        summarizer = Summarizer(backend=summarize_backend, model_name=summarize_model)
+
+        # Combine text from segments
+        text_to_summarize = '\n\n'.join([seg['text'] for seg in segments])
+
+        # Detect language for summary
+        detected_lang = detect_language(text_to_summarize)
+        summary_lang = "ru" if detected_lang in ["ru", "uk", "be"] else "en"
+
+        summary = summarizer.summarize_long_text(text_to_summarize, language=summary_lang)
+
+        # Save summary as a separate document
+        summary_path = settings.OUTPUT_DIR / f"{title}_summary.md"
+        with open(summary_path, 'w', encoding='utf-8') as f:
+            f.write(f"# Summary: {title}\n\n")
+            f.write(summary)
+
+        logger.info("Summary saved: %s", summary_path)
+    except Exception as e:
+        logger.error("Failed to generate summary: %s", e)
+
+
 def process_text_file(
     text_path: str,
     translate_methods: Optional[list[str]] = None,
     refine_model: Optional[str] = None,
     refine_translation_model: Optional[str] = None,
-    translate_model: Optional[str] = None
+    translate_model: Optional[str] = None,
+    refine_backend: str = "ollama",
+    summarize: bool = False,
+    summarize_model: Optional[str] = None,
+    summarize_backend: str = "ollama"
 ):
     """
     Process an existing text document (.docx, .md, .txt).
@@ -182,8 +229,12 @@ def process_text_file(
     Args:
         text_path: Path to the source document.
         translate_methods: Translation backends to run.
-        refine_model: Ollama model for text refinement.
-        refine_translation_model: Ollama model for translation refinement.
+        refine_model: Model for text refinement.
+        refine_translation_model: Model for translation refinement.
+        refine_backend: Backend for refinement (ollama or openai_api).
+        summarize: Whether to generate a summary.
+        summarize_model: Model for summarization.
+        summarize_backend: Backend for summarization (ollama or openai_api).
     """
     logger.info("=" * 60)
     logger.info("Starting text document processing")
@@ -229,7 +280,7 @@ def process_text_file(
         try:
             from .text_refiner import TextRefiner
 
-            refiner = TextRefiner(model_name=refine_model)
+            refiner = TextRefiner(backend=refine_backend, model_name=refine_model)
             refined_text = refiner.refine_text(text_content)
             refined_paragraphs = [p.strip() for p in refined_text.split("\n\n") if p.strip()]
 
@@ -359,10 +410,19 @@ def process_text_file(
             )
             logger.info("  Saved refined translation markdown: %s", md_path_trans_refined)
 
+    # Generate summary if requested.
+    if summarize and summarize_model:
+        _generate_summary(
+            title=text_title,
+            segments=refined_segments if refined_segments else original_segments,
+            summarize_model=summarize_model,
+            summarize_backend=summarize_backend
+        )
+
     # Warn if no output was produced.
-    if not refined_segments and not translated_segments_dict:
-        logger.warning("No --refine-model or --translate options were provided")
-        logger.info("The source file is unchanged. Use --refine-model or --translate to generate output.")
+    if not refined_segments and not translated_segments_dict and not (summarize and summarize_model):
+        logger.warning("No --refine-model, --translate, or --summarize options were provided")
+        logger.info("The source file is unchanged. Use --refine-model, --translate, or --summarize to generate output.")
 
     logger.info("\n" + "=" * 60)
     logger.info("Text document processing complete!")
@@ -418,6 +478,148 @@ def validate_args(args) -> bool:
             logger.error("Text file not found: %s", args.input_text)
             return False
 
+    # Validate refinement parameters early (before expensive operations).
+    if args.refine_model:
+        if args.refine_backend == "openai_api":
+            # Check OpenAI API key.
+            if not settings.OPENAI_API_KEY:
+                logger.error("--refine-backend openai_api requires OPENAI_API_KEY in environment")
+                logger.error("Set it in .env file: OPENAI_API_KEY=your-key-here")
+                return False
+
+            # Validate OpenAI library availability.
+            try:
+                import openai
+            except ImportError:
+                logger.error("OpenAI library not installed. Install it with: pip install openai>=1.6.0")
+                return False
+
+        elif args.refine_backend == "ollama":
+            # Check Ollama server availability and model existence.
+            try:
+                import requests
+                response = requests.get("http://localhost:11434/api/tags", timeout=5)
+                if response.status_code != 200:
+                    logger.error("Cannot connect to Ollama server at http://localhost:11434")
+                    logger.error("Please start Ollama: ollama serve")
+                    return False
+
+                # Check if the model exists.
+                models = response.json().get('models', [])
+                model_names = [m['name'] for m in models]
+
+                if args.refine_model not in model_names:
+                    logger.error("Model '%s' not found in Ollama", args.refine_model)
+                    logger.error("Available models: %s", ', '.join(model_names) if model_names else 'none')
+                    logger.error("To download: ollama pull %s", args.refine_model)
+                    return False
+
+            except requests.exceptions.RequestException as e:
+                logger.error("Cannot connect to Ollama server: %s", e)
+                logger.error("Please start Ollama: ollama serve")
+                return False
+            except Exception as e:
+                logger.error("Error checking Ollama: %s", e)
+                return False
+
+    # Validate translation refinement parameters.
+    if args.refine_translation:
+        # Translation refinement currently only supports Ollama.
+        try:
+            import requests
+            response = requests.get("http://localhost:11434/api/tags", timeout=5)
+            if response.status_code != 200:
+                logger.error("Cannot connect to Ollama server for --refine-translation")
+                logger.error("Please start Ollama: ollama serve")
+                return False
+
+            models = response.json().get('models', [])
+            model_names = [m['name'] for m in models]
+
+            if args.refine_translation not in model_names:
+                logger.error("Model '%s' not found in Ollama", args.refine_translation)
+                logger.error("Available models: %s", ', '.join(model_names) if model_names else 'none')
+                logger.error("To download: ollama pull %s", args.refine_translation)
+                return False
+
+        except requests.exceptions.RequestException as e:
+            logger.error("Cannot connect to Ollama server: %s", e)
+            return False
+
+    # Validate summarization parameters.
+    if args.summarize and args.summarize_model:
+        if args.summarize_backend == "openai_api":
+            if not settings.OPENAI_API_KEY:
+                logger.error("--summarize-backend openai_api requires OPENAI_API_KEY in environment")
+                return False
+
+            try:
+                import openai
+            except ImportError:
+                logger.error("OpenAI library not installed. Install it with: pip install openai>=1.6.0")
+                return False
+
+        elif args.summarize_backend == "ollama":
+            try:
+                import requests
+                response = requests.get("http://localhost:11434/api/tags", timeout=5)
+                if response.status_code != 200:
+                    logger.error("Cannot connect to Ollama server for --summarize")
+                    return False
+
+                models = response.json().get('models', [])
+                model_names = [m['name'] for m in models]
+
+                if args.summarize_model not in model_names:
+                    logger.error("Model '%s' not found in Ollama", args.summarize_model)
+                    logger.error("Available models: %s", ', '.join(model_names) if model_names else 'none')
+                    logger.error("To download: ollama pull %s", args.summarize_model)
+                    return False
+
+            except requests.exceptions.RequestException as e:
+                logger.error("Cannot connect to Ollama server: %s", e)
+                return False
+
+    # Validate translation backend if specified.
+    if args.translate:
+        translate_methods = [m.strip() for m in args.translate.split(',')]
+
+        for method in translate_methods:
+            if method not in ["NLLB", "openai_api"]:
+                logger.error("Unknown translation method: %s", method)
+                logger.error("Available methods: NLLB, openai_api")
+                return False
+
+            if method == "openai_api":
+                if not settings.OPENAI_API_KEY:
+                    logger.error("Translation method 'openai_api' requires OPENAI_API_KEY")
+                    return False
+
+                try:
+                    import openai
+                except ImportError:
+                    logger.error("OpenAI library not installed. Install it with: pip install openai>=1.6.0")
+                    return False
+
+    # Validate transcription backend if specified.
+    if args.transcribe:
+        valid_transcribe_methods = ["whisper_base", "whisper_small", "whisper_medium", "whisper_openai_api"]
+        if args.transcribe not in valid_transcribe_methods:
+            logger.error("Unknown transcription method: %s", args.transcribe)
+            logger.error("Available methods: %s", ', '.join(valid_transcribe_methods))
+            return False
+
+        if args.transcribe == "whisper_openai_api":
+            if not settings.OPENAI_API_KEY:
+                logger.error("Transcription method 'whisper_openai_api' requires OPENAI_API_KEY")
+                return False
+
+            try:
+                import openai
+            except ImportError:
+                logger.error("OpenAI library not installed. Install it with: pip install openai>=1.6.0")
+                return False
+
     return True
 
 
@@ -429,7 +631,11 @@ def process_youtube_video(
     custom_prompt: Optional[str] = None,
     refine_model: Optional[str] = None,
     refine_translation_model: Optional[str] = None,
-    translate_model: Optional[str] = None
+    translate_model: Optional[str] = None,
+    refine_backend: str = "ollama",
+    summarize: bool = False,
+    summarize_model: Optional[str] = None,
+    summarize_backend: str = "ollama"
 ):
     """
     Process a YouTube video end-to-end.
@@ -440,8 +646,12 @@ def process_youtube_video(
         translate_methods: Translation backends to run.
         with_speakers: Whether to enable speaker diarisation.
         custom_prompt: Optional custom Whisper prompt.
-        refine_model: Ollama model for transcript refinement.
-        refine_translation_model: Ollama model for translation refinement.
+        refine_model: Model for transcript refinement.
+        refine_translation_model: Model for translation refinement.
+        refine_backend: Backend for refinement (ollama or openai_api).
+        summarize: Whether to generate a summary.
+        summarize_model: Model for summarization.
+        summarize_backend: Backend for summarization (ollama or openai_api).
     """
     logger.info("=" * 60)
     logger.info("Starting YouTube processing")
@@ -493,7 +703,7 @@ def process_youtube_video(
         try:
             from .text_refiner import TextRefiner
 
-            refiner = TextRefiner(model_name=refine_model)
+            refiner = TextRefiner(backend=refine_backend, model_name=refine_model)
 
             # Extract plain text.
             original_text = transcriber.segments_to_text(transcription_segments)
@@ -708,6 +918,17 @@ def process_youtube_video(
             logger.info(f"  - {md_path}")
             logger.info("=" * 60)
 
+    # Generate summary if requested.
+    if summarize and summarize_model:
+        # Use the best available segments
+        segments_for_summary = refined_transcription_segments or original_transcription_segments
+        _generate_summary(
+            title=video_title,
+            segments=segments_for_summary,
+            summarize_model=summarize_model,
+            summarize_backend=summarize_backend
+        )
+
 
 def process_local_video(
     video_path: str,
@@ -717,7 +938,11 @@ def process_local_video(
     custom_prompt: Optional[str] = None,
     refine_model: Optional[str] = None,
     refine_translation_model: Optional[str] = None,
-    translate_model: Optional[str] = None
+    translate_model: Optional[str] = None,
+    refine_backend: str = "ollama",
+    summarize: bool = False,
+    summarize_model: Optional[str] = None,
+    summarize_backend: str = "ollama"
 ):
     """
     Process a local video file by extracting audio and transcribing.
@@ -728,9 +953,13 @@ def process_local_video(
         translate_methods: Translation backends to apply.
         with_speakers: Enable speaker diarisation (not yet supported).
         custom_prompt: Optional custom Whisper prompt.
-        refine_model: Ollama model for transcript refinement.
-        refine_translation_model: Ollama model for translation refinement.
+        refine_model: Model for transcript refinement.
+        refine_backend: Backend for refinement (ollama or openai_api).
+        refine_translation_model: Model for translation refinement.
         translate_model: NLLB model override.
+        summarize: Whether to generate a summary.
+        summarize_model: Model for summarization.
+        summarize_backend: Backend for summarization (ollama or openai_api).
     """
     logger.info("=" * 60)
     logger.info("Starting local video processing")
@@ -776,7 +1005,7 @@ def process_local_video(
         try:
             from .text_refiner import TextRefiner
 
-            refiner = TextRefiner(model_name=refine_model)
+            refiner = TextRefiner(backend=refine_backend, model_name=refine_model)
 
             # Convert segments to plain text.
             original_text = transcriber.segments_to_text(transcription_segments)
@@ -992,6 +1221,17 @@ def process_local_video(
             logger.info(f"  - {md_path}")
             logger.info("=" * 60)
 
+    # Generate summary if requested.
+    if summarize and summarize_model:
+        # Use the best available segments
+        segments_for_summary = refined_transcription_segments or original_transcription_segments
+        _generate_summary(
+            title=audio_title,
+            segments=segments_for_summary,
+            summarize_model=summarize_model,
+            summarize_backend=summarize_backend
+        )
+
 
 def process_local_audio(
     audio_path: str,
@@ -1001,7 +1241,11 @@ def process_local_audio(
     custom_prompt: Optional[str] = None,
     refine_model: Optional[str] = None,
     refine_translation_model: Optional[str] = None,
-    translate_model: Optional[str] = None
+    translate_model: Optional[str] = None,
+    refine_backend: str = "ollama",
+    summarize: bool = False,
+    summarize_model: Optional[str] = None,
+    summarize_backend: str = "ollama"
 ):
     """
     Process a local audio file end-to-end.
@@ -1012,8 +1256,12 @@ def process_local_audio(
         translate_methods: Translation backends to apply.
         with_speakers: Enable speaker diarisation (not yet supported).
         custom_prompt: Optional custom Whisper prompt.
-        refine_model: Ollama model for transcript refinement.
-        refine_translation_model: Ollama model for translation refinement.
+        refine_model: Model for transcript refinement.
+        refine_backend: Backend for refinement (ollama or openai_api).
+        refine_translation_model: Model for translation refinement.
+        summarize: Whether to generate a summary.
+        summarize_model: Model for summarization.
+        summarize_backend: Backend for summarization (ollama or openai_api).
     """
     logger.info("=" * 60)
     logger.info("Starting local audio processing")
@@ -1048,7 +1296,7 @@ def process_local_audio(
         try:
             from .text_refiner import TextRefiner
 
-            refiner = TextRefiner(model_name=refine_model)
+            refiner = TextRefiner(backend=refine_backend, model_name=refine_model)
 
             # Convert segments to plain text.
             original_text = transcriber.segments_to_text(transcription_segments)
@@ -1264,6 +1512,17 @@ def process_local_audio(
             logger.info(f"  - {md_path}")
             logger.info("=" * 60)
 
+    # Generate summary if requested.
+    if summarize and summarize_model:
+        # Use the best available segments
+        segments_for_summary = refined_transcription_segments or original_transcription_segments
+        _generate_summary(
+            title=audio_title,
+            segments=segments_for_summary,
+            summarize_model=summarize_model,
+            summarize_backend=summarize_backend
+        )
+
 
 def main():
     """Application entry point."""
@@ -1331,7 +1590,11 @@ def main():
                 custom_prompt=custom_prompt,
                 refine_model=args.refine_model,
                 refine_translation_model=args.refine_translation,
-                translate_model=args.translate_model
+                translate_model=args.translate_model,
+                refine_backend=args.refine_backend,
+                summarize=args.summarize,
+                summarize_model=args.summarize_model,
+                summarize_backend=args.summarize_backend
             )
         elif args.input_audio:
             process_local_audio(
@@ -1342,7 +1605,11 @@ def main():
                 custom_prompt=custom_prompt,
                 refine_model=args.refine_model,
                 refine_translation_model=args.refine_translation,
-                translate_model=args.translate_model
+                translate_model=args.translate_model,
+                refine_backend=args.refine_backend,
+                summarize=args.summarize,
+                summarize_model=args.summarize_model,
+                summarize_backend=args.summarize_backend
             )
         elif args.input_video:
             process_local_video(
@@ -1353,7 +1620,11 @@ def main():
                 custom_prompt=custom_prompt,
                 refine_model=args.refine_model,
                 refine_translation_model=args.refine_translation,
-                translate_model=args.translate_model
+                translate_model=args.translate_model,
+                refine_backend=args.refine_backend,
+                summarize=args.summarize,
+                summarize_model=args.summarize_model,
+                summarize_backend=args.summarize_backend
             )
         elif args.input_text:
             process_text_file(
@@ -1361,7 +1632,11 @@ def main():
                 translate_methods=translate_methods,
                 refine_model=args.refine_model,
                 refine_translation_model=args.refine_translation,
-                translate_model=args.translate_model
+                translate_model=args.translate_model,
+                refine_backend=args.refine_backend,
+                summarize=args.summarize,
+                summarize_model=args.summarize_model,
+                summarize_backend=args.summarize_backend
             )
 
 

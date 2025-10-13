@@ -1,218 +1,225 @@
 """
-Вспомогательные функции
+General utility helpers used across the project.
 """
 import re
 from pathlib import Path
 from typing import Optional
+
 import requests
+
+
+def format_log_preview(text: str, max_length: int = 80) -> str:
+    """
+    Create a short single-line preview suitable for logging.
+
+    Args:
+        text: Original text.
+        max_length: Maximum preview length.
+
+    Returns:
+        Sanitised preview string.
+    """
+    if not text:
+        return ""
+
+    single_line = " ".join(text.split())
+    if len(single_line) > max_length:
+        return single_line[:max_length] + "..."
+    return single_line
 
 
 def sanitize_filename(filename: str, max_length: int = 200) -> str:
     """
-    Очистка имени файла от недопустимых символов
-    
+    Remove characters that are unsafe for file systems and terminals.
+
     Args:
-        filename: Исходное имя файла
-        max_length: Максимальная длина имени
-        
+        filename: Original file name.
+        max_length: Maximum allowed length.
+
     Returns:
-        Очищенное имя файла
+        Sanitised file name suitable for saving.
     """
-    # Удаляем недопустимые символы для файловой системы и терминала
-    # Добавляем восклицательные знаки (!) и другие символы, которые вызывают проблемы в терминале
     invalid_chars = r'[<>:"/\\|?*!@#$%^&*()+={}[\]|:;,\'",./`~\x00-\x1f]'
-    clean_name = re.sub(invalid_chars, '_', filename)
-    
-    # Удаляем множественные пробелы и подчеркивания
-    clean_name = re.sub(r'[\s_]+', '_', clean_name)
-    
-    # Обрезаем до максимальной длины
+    clean_name = re.sub(invalid_chars, "_", filename)
+
+    clean_name = re.sub(r"[\s_]+", "_", clean_name)
+
     if len(clean_name) > max_length:
         clean_name = clean_name[:max_length]
-    
-    # Удаляем точки в начале и конце
-    clean_name = clean_name.strip('._')
-    
+
+    clean_name = clean_name.strip("._")
+
     return clean_name or "untitled"
 
 
 def format_timestamp(seconds: float) -> str:
     """
-    Форматирование временной метки в формат MM:SS или HH:MM:SS
-    
+    Convert a timestamp in seconds to MM:SS or HH:MM:SS format.
+
     Args:
-        seconds: Время в секундах
-        
+        seconds: Timestamp value.
+
     Returns:
-        Отформатированная временная метка
+        Formatted timestamp string.
     """
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
-    
+
     if hours > 0:
         return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-    else:
-        return f"{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
 
 
 def detect_language(text: str) -> str:
     """
-    Простое определение языка текста (русский или английский)
-    
+    Perform a simple Russian/English language heuristic.
+
     Args:
-        text: Текст для анализа
-        
+        text: Text to analyse.
+
     Returns:
-        Код языка ('ru' или 'en')
+        'ru' for Russian, 'en' for English.
     """
-    # Подсчитываем кириллические и латинские символы
-    cyrillic_count = len(re.findall(r'[а-яА-ЯёЁ]', text))
-    latin_count = len(re.findall(r'[a-zA-Z]', text))
-    
+    cyrillic_count = len(re.findall(r"[а-яА-ЯёЁ]", text))
+    latin_count = len(re.findall(r"[a-zA-Z]", text))
+
     if cyrillic_count > latin_count:
         return "ru"
-    else:
-        return "en"
+    return "en"
 
 
 def chunk_text(text: str, max_tokens: int = 2000) -> list[str]:
     """
-    Разбивка текста на чанки для перевода
-    
+    Split text into chunks sized for translation pipelines.
+
     Args:
-        text: Текст для разбивки
-        max_tokens: Максимальный размер чанка (приблизительно в словах)
-        
+        text: Original text.
+        max_tokens: Approximate maximum number of words per chunk.
+
     Returns:
-        Список чанков текста
+        List of text chunks.
     """
-    # Разбиваем по абзацам
-    paragraphs = text.split('\n\n')
-    
-    chunks = []
-    current_chunk = []
+    paragraphs = text.split("\n\n")
+
+    chunks: list[str] = []
+    current_chunk: list[str] = []
     current_length = 0
-    
+
     for para in paragraphs:
         para_length = len(para.split())
-        
+
         if current_length + para_length > max_tokens and current_chunk:
-            # Сохраняем текущий чанк и начинаем новый
-            chunks.append('\n\n'.join(current_chunk))
+            chunks.append("\n\n".join(current_chunk))
             current_chunk = [para]
             current_length = para_length
         else:
             current_chunk.append(para)
             current_length += para_length
-    
-    # Добавляем последний чанк
+
     if current_chunk:
-        chunks.append('\n\n'.join(current_chunk))
-    
+        chunks.append("\n\n".join(current_chunk))
+
     return chunks
 
 
 def estimate_processing_time(
-    duration_seconds: float, 
+    duration_seconds: float,
     operation: str = "transcribe",
-    model: str = "whisper_base"
+    model: str = "whisper_base",
 ) -> str:
     """
-    Оценка времени обработки (калиброванные значения для M1 MacBook Air)
-    
+    Estimate processing time based on calibrated M1 MacBook Air numbers.
+
     Args:
-        duration_seconds: Длительность аудио в секундах
-        operation: Тип операции ('transcribe' или 'translate')
-        model: Модель для транскрибирования
-        
+        duration_seconds: Duration of source audio.
+        operation: Either 'transcribe' or 'translate'.
+        model: Whisper model identifier (for transcription).
+
     Returns:
-        Строка с оценкой времени
+        Human-friendly estimate string.
     """
     if operation == "transcribe":
-        # Множители для разных моделей (M1 CPU, откалиброванные)
         multipliers = {
-            "whisper_base": 0.06,   # Очень быстро!
-            "whisper_small": 0.19,  # Всё ещё быстро
-            "whisper_medium": 0.45, # Медленнее, но лучше качество (оценка)
+            "whisper_base": 0.06,
+            "whisper_small": 0.19,
+            "whisper_medium": 0.45,
         }
         estimated = duration_seconds * multipliers.get(model, 0.10)
     else:  # translate
-        # NLLB на M1 CPU
         estimated = duration_seconds * 0.47
-    
+
     minutes = int(estimated // 60)
     seconds = int(estimated % 60)
-    
-    # Детальное форматирование
+
     if estimated < 5:
-        return "несколько секунд"
-    elif estimated < 10:
-        return f"{int(estimated)} секунд"
-    elif estimated < 30:
-        return f"около {seconds} секунд"
-    elif estimated < 45:
-        return "около 30 секунд"
-    elif estimated < 60:
-        return "около минуты"
-    elif estimated < 90:
-        return "1-1.5 минуты"
-    elif minutes < 3:
-        return f"около {minutes} минут"
-    elif minutes < 5:
-        return f"{minutes}-{minutes+1} минут"
-    elif minutes < 10:
-        return f"около {minutes} минут"
-    else:
-        return f"около {minutes} минут (±10%)"
+        return "a few seconds"
+    if estimated < 10:
+        return f"{int(estimated)} seconds"
+    if estimated < 30:
+        return f"around {seconds} seconds"
+    if estimated < 45:
+        return "around 30 seconds"
+    if estimated < 60:
+        return "about a minute"
+    if estimated < 90:
+        return "1–1.5 minutes"
+    if minutes < 3:
+        return f"about {minutes} minutes"
+    if minutes < 5:
+        return f"{minutes}-{minutes + 1} minutes"
+    if minutes < 10:
+        return f"about {minutes} minutes"
+    return f"around {minutes} minutes (±10%)"
 
 
-def create_whisper_prompt_with_llm(metadata: dict, use_ollama: bool = True, model: str = "qwen2.5:3b") -> str:
+def create_whisper_prompt_with_llm(
+    metadata: dict,
+    use_ollama: bool = True,
+    model: str = "qwen2.5:3b",
+) -> str:
     """
-    Создание промпта для Whisper из метаданных с помощью LLM
+    Build a Whisper prompt from metadata using a local LLM.
 
     Args:
-        metadata: Словарь с метаданными видео
-        use_ollama: Использовать Ollama для генерации промпта
-        model: Модель Ollama для использования
+        metadata: Video metadata dictionary.
+        use_ollama: Whether to call Ollama for prompt generation.
+        model: Ollama model name.
 
     Returns:
-        Строка-промпт для Whisper
+        Generated Whisper prompt.
     """
     from .logger import logger
 
     if not use_ollama:
         return create_whisper_prompt(metadata)
 
-    # Собираем контекст из метаданных
     context_parts = []
 
-    title = metadata.get('title', '')
+    title = metadata.get("title", "")
     if title:
         context_parts.append(f"Title: {title}")
 
-    description = metadata.get('description', '')
+    description = metadata.get("description", "")
     if description:
-        # Берём первые 500 символов описания
         short_desc = description[:500] if len(description) > 500 else description
         context_parts.append(f"Description: {short_desc}")
 
-    tags = metadata.get('tags', [])
+    tags = metadata.get("tags", [])
     if tags:
-        context_parts.append(f"Tags: {', '.join(tags[:20])}")  # Первые 20 тегов
+        context_parts.append(f"Tags: {', '.join(tags[:20])}")
 
-    channel = metadata.get('channel', '')
+    channel = metadata.get("channel", "")
     if channel:
         context_parts.append(f"Channel: {channel}")
 
-    # Добавляем субтитры если есть (первые 1000 символов для извлечения терминов)
-    subtitles = metadata.get('subtitles_sample', '')
+    subtitles = metadata.get("subtitles_sample", "")
     if subtitles:
         context_parts.append(f"Subtitles sample: {subtitles[:1000]}")
 
-    context = '\n'.join(context_parts)
+    context = "\n".join(context_parts)
 
-    # Промпт для LLM (финальная версия с обязательной структурой на русском)
+    # Preserve the Russian prompt: it is intentionally crafted for Whisper.
     llm_prompt = f"""Ты — ассистент, который генерирует идеальные промпты для модели транскрибации Whisper. Твоя единственная задача — создать один короткий, максимально информативный и **СТРОГО НА РУССКОМ ЯЗЫКЕ** текст.
 
 **Входные данные:**
@@ -235,7 +242,6 @@ def create_whisper_prompt_with_llm(metadata: dict, use_ollama: bool = True, mode
 ПРОМПТ ДЛЯ WHISPER:"""
 
     try:
-        # Вызов Ollama
         response = requests.post(
             "http://localhost:11434/api/generate",
             json={
@@ -244,150 +250,167 @@ def create_whisper_prompt_with_llm(metadata: dict, use_ollama: bool = True, mode
                 "stream": False,
                 "options": {
                     "temperature": 0.3,
-                    "num_predict": 400,  # Больше токенов для генерации дополнительных терминов
-                    "stop": ["\n\n\n", "**", "EXPLANATION:", "Note:", "Пояснение:"]
-                }
+                    "num_predict": 400,
+                    "stop": ["\n\n\n", "**", "EXPLANATION:", "Note:", "Пояснение:"],
+                },
             },
-            timeout=30
+            timeout=30,
         )
 
         if response.status_code == 200:
             result = response.json()
-            prompt = result.get('response', '').strip()
+            prompt = result.get("response", "").strip()
 
-            # Очистка результата
-            # Убираем заголовки "Часть 1", "Часть 2", "Часть 3" и т.д.
-            import re
             prompt = re.sub(r'Часть \d+[:\(][^\)]*[\):]?\s*', '', prompt)
             prompt = re.sub(r'\(Контекст\)|\(Лексика\)|\(Привязка\)', '', prompt)
 
-            # Убираем возможные артефакты
-            if ':' in prompt and prompt.index(':') < 20:
-                prompt = prompt.split(':', 1)[1].strip()
+            if ":" in prompt and prompt.index(":") < 20:
+                prompt = prompt.split(":", 1)[1].strip()
 
-            # Ограничиваем длину (Whisper лимит ~224 токена ≈ 600 символов для русского)
-            MAX_PROMPT_LENGTH = 600  # Безопасный лимит для русского текста
+            MAX_PROMPT_LENGTH = 600
 
             if len(prompt) > MAX_PROMPT_LENGTH:
-                logger.warning(f"Промпт слишком длинный ({len(prompt)} символов), обрезается до {MAX_PROMPT_LENGTH}")
+                logger.warning(
+                    "Generated prompt is too long (%d chars); trimming to %d",
+                    len(prompt),
+                    MAX_PROMPT_LENGTH,
+                )
 
-                # Пытаемся сохранить структуру: контекст + термины + первое предложение привязки
-                # Находим последнюю точку перед лимитом (это может быть конец терминов)
                 truncated = prompt[:MAX_PROMPT_LENGTH]
-
-                # Если есть точка, обрезаем до неё
-                last_period = truncated.rfind('.')
-                if last_period > MAX_PROMPT_LENGTH * 0.5:  # Точка не слишком близко к началу
-                    truncated = truncated[:last_period + 1]
+                last_period = truncated.rfind(".")
+                if last_period > MAX_PROMPT_LENGTH * 0.5:
+                    truncated = truncated[: last_period + 1]
                 else:
-                    # Иначе обрезаем по последней запятой
-                    last_comma = truncated.rfind(',')
+                    last_comma = truncated.rfind(",")
                     if last_comma > 0:
                         truncated = truncated[:last_comma]
 
-                # Добавляем первое предложение из субтитров как привязку (если потеряли)
-                if 'subtitles_sample' in str(metadata):
-                    first_sentence = metadata.get('subtitles_sample', '').split('.')[0]
+                if "subtitles_sample" in str(metadata):
+                    first_sentence = metadata.get("subtitles_sample", "").split(".")[0]
                     if first_sentence and first_sentence not in truncated:
-                        # Добавляем если есть место
                         if len(truncated) + len(first_sentence) + 2 <= MAX_PROMPT_LENGTH:
-                            truncated = truncated.rstrip() + ' ' + first_sentence + '.'
+                            truncated = truncated.rstrip() + " " + first_sentence + "."
 
                 prompt = truncated
-                logger.info(f"Промпт обрезан до {len(prompt)} символов")
+                logger.info("Prompt trimmed to %d characters", len(prompt))
 
-            logger.info(f"LLM создал промпт для Whisper ({len(prompt)} символов):")
-            logger.info(f"  {prompt}")
+            logger.info("LLM-generated Whisper prompt (%d chars)", len(prompt))
+            logger.debug("Prompt preview: %s", format_log_preview(prompt))
 
             return prompt
-        else:
-            logger.warning(f"Ошибка при вызове Ollama: {response.status_code}")
-            return create_whisper_prompt(metadata)
+
+        logger.warning("Ollama returned status %s; falling back to standard prompt", response.status_code)
+        return create_whisper_prompt(metadata)
 
     except Exception as e:
-        logger.warning(f"Не удалось создать промпт через LLM: {e}")
-        logger.info("Используется стандартный метод создания промпта")
+        logger.warning("Failed to build prompt via LLM: %s", e)
+        logger.info("Falling back to standard prompt generator")
         return create_whisper_prompt(metadata)
 
 
 def create_whisper_prompt(metadata: dict) -> str:
     """
-    Создание промпта для Whisper из метаданных видео
-
-    Whisper использует промпт для улучшения качества транскрипции:
-    - Правильное распознавание имён, терминов и специфичных слов
-    - Сохранение стиля и пунктуации
+    Build a Whisper prompt directly from metadata without LLM assistance.
 
     Args:
-        metadata: Словарь с метаданными видео
+        metadata: Video metadata dictionary.
 
     Returns:
-        Строка-промпт для Whisper
+        Prompt string joined by commas.
     """
-    prompt_parts = []
+    prompt_parts: list[str] = []
 
-    # Список общих стоп-слов, которые не нужны в промпте
     stop_words = {
-        'the', 'and', 'for', 'with', 'from', 'this', 'that', 'these', 'those',
-        'how', 'what', 'where', 'when', 'why', 'who', 'which', 'can', 'will',
-        'should', 'would', 'could', 'may', 'might', 'must', 'video', 'tutorial',
-        'guide', 'tips', 'tricks', 'best', 'top', 'new', 'learn', 'beginner',
-        'advanced', 'full', 'complete', 'explained', 'easy', 'simple'
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "this",
+        "that",
+        "these",
+        "those",
+        "how",
+        "what",
+        "where",
+        "when",
+        "why",
+        "who",
+        "which",
+        "can",
+        "will",
+        "should",
+        "would",
+        "could",
+        "may",
+        "might",
+        "must",
+        "video",
+        "tutorial",
+        "guide",
+        "tips",
+        "tricks",
+        "best",
+        "top",
+        "new",
+        "learn",
+        "beginner",
+        "advanced",
+        "full",
+        "complete",
+        "explained",
+        "easy",
+        "simple",
     }
 
-    # Извлекаем ключевые слова из названия
-    title = metadata.get('title', '')
+    title = metadata.get("title", "")
     if title:
-        # Слова с заглавными буквами (имена, бренды, аббревиатуры)
-        capitalized_words = re.findall(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)*\b|\b[A-Z]{2,}\b', title)
-        for word in capitalized_words:
+        capitalised_words = re.findall(
+            r"\b[A-Z][a-z]+(?:[A-Z][a-z]+)*\b|\b[A-Z]{2,}\b", title
+        )
+        for word in capitalised_words:
             if word.lower() not in stop_words:
                 prompt_parts.append(word)
 
-    # Добавляем ВСЕ теги (они уже отфильтрованы автором видео)
-    tags = metadata.get('tags', [])
+    tags = metadata.get("tags", [])
     if tags:
-        # Берём все теги, фильтруем только по стоп-словам
         for tag in tags:
-            # Пропускаем слишком общие фразы
             if tag.lower() not in stop_words and len(tag) > 2:
                 prompt_parts.append(tag)
 
-    # Добавляем имя канала (часто содержит имя автора)
-    channel = metadata.get('channel', '')
+    channel = metadata.get("channel", "")
     if channel:
         prompt_parts.append(channel)
 
-    # Формируем промпт
     if prompt_parts:
-        # Убираем дубликаты и объединяем
-        unique_parts = []
+        unique_parts: list[str] = []
         seen = set()
         for part in prompt_parts:
             if part.lower() not in seen:
                 unique_parts.append(part)
                 seen.add(part.lower())
 
-        # Whisper имеет ограничение на длину промпта (~224 токена или ~1000 символов)
-        # Собираем промпт постепенно, проверяя длину
-        MAX_PROMPT_LENGTH = 800  # Оставляем запас
-        prompt_list = []
+        MAX_PROMPT_LENGTH = 800
+        prompt_list: list[str] = []
         current_length = 0
 
         for part in unique_parts:
-            # +2 для ", " разделителя
-            part_length = len(part) + 2
+            part_length = len(part) + 2  # account for ", "
             if current_length + part_length > MAX_PROMPT_LENGTH:
                 break
             prompt_list.append(part)
             current_length += part_length
 
-        prompt = ', '.join(prompt_list)
+        prompt = ", ".join(prompt_list)
 
-        # Импортируем logger локально чтобы избежать циклических импортов
         from .logger import logger
-        logger.info(f"Создан промпт для Whisper ({len(prompt)} символов, {len(prompt_list)} терминов):")
-        logger.info(f"  {prompt}")
+
+        logger.info(
+            "Generated metadata-based Whisper prompt (%d chars, %d terms)",
+            len(prompt),
+            len(prompt_list),
+        )
+        logger.debug("Prompt preview: %s", format_log_preview(prompt))
 
         return prompt
 
