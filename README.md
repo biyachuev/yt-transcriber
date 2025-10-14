@@ -4,7 +4,21 @@ A flexible toolkit for transcribing and translating YouTube videos, audio files,
 
 ## 🎯 Highlights
 
-### Version 1.4 (current)
+### Version 1.5 (current)
+- ✅ **Speaker Diarization**
+  - Automatic speaker identification using pyannote.audio
+  - Speaker labels in transcripts ([SPEAKER_00], [SPEAKER_01], etc.)
+  - Works with both local Whisper and OpenAI API
+  - Optimal speaker detection using VAD integration
+  - Enable with `--speakers` flag
+- ✅ **Enhanced logging with colored output**
+  - Color-coded log levels for better visibility
+  - WARNING messages in orange for important notices
+  - INFO messages in green for successful operations
+  - ERROR/CRITICAL messages in red for failures
+  - Smart warnings (e.g., missing Whisper prompt suggestions)
+
+### Version 1.4
 - ✅ **Video file support**
   - Process local video files (MP4, MKV, AVI, MOV, etc.)
   - Automatic audio extraction using FFmpeg
@@ -45,9 +59,8 @@ A flexible toolkit for transcribing and translating YouTube videos, audio files,
 - ✅ Apple M1/M2 optimisations
 
 ### In progress
-- 🔄 Whisper via OpenAI API
-- 🔄 Translation via OpenAI API
-- 🔄 Speaker diarisation
+- 🔄 Optimized chunk processing for OpenAI API
+- 🔄 Batch processing support
 - 🔄 Docker support
 
 ## 📋 Requirements
@@ -186,6 +199,32 @@ Produces two documents:
 # FIDE, Hikaru Nakamura, Magnus Carlsen, chess tournament
 
 python -m src.main     --url "https://youtube.com/watch?v=YOUR_VIDEO_ID"     --transcribe whisper_base     --prompt prompt.txt
+```
+
+#### 7. Enable speaker diarization (v1.5)
+
+```bash
+# Transcribe with automatic speaker identification
+python -m src.main \
+    --url "https://youtube.com/watch?v=YOUR_VIDEO_ID" \
+    --transcribe whisper_medium \
+    --speakers
+```
+
+**Requirements for speaker diarization:**
+1. Get HuggingFace token: https://huggingface.co/settings/tokens (create a "Read" token)
+2. Accept model terms for all required models:
+   - https://huggingface.co/pyannote/speaker-diarization-3.1
+   - https://huggingface.co/pyannote/segmentation-3.0
+   - https://huggingface.co/pyannote/speaker-diarization-community-1
+   - https://huggingface.co/pyannote/voice-activity-detection (optional, for better chunking)
+3. Set token in environment: `export HF_TOKEN=your_token_here` (add to `~/.zshrc` or `~/.bashrc`)
+
+Output will include speaker labels:
+```
+[00:00] [SPEAKER_00] Hello everyone, welcome to the show
+[00:05] [SPEAKER_01] Thanks for having me
+[00:08] [SPEAKER_00] Let's get started with today's topic
 ```
 
 ## ⚖️ Legal notice

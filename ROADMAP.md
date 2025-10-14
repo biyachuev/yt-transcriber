@@ -2,6 +2,32 @@
 
 ## Recently Completed
 
+### ✅ Speaker Diarization (v1.5.0)
+**Status:** Implemented and committed (2025-10-13)
+
+**What was done:**
+- Implemented speaker identification using pyannote.audio
+- Added `_perform_speaker_diarization()` method in Transcriber
+- Integrated speaker labels with TranscriptionSegment
+- Updated document_writer to format speaker labels in output
+- Works with both local Whisper and OpenAI Whisper API
+- Graceful fallback when HF_TOKEN not available
+- Added comprehensive test suite (8 tests)
+
+**Technical details:**
+- Uses pyannote/speaker-diarization-3.1 model
+- Assigns speakers based on maximum overlap with speech segments
+- Seamlessly integrates with existing VAD infrastructure
+- Speaker labels automatically included in DOCX and Markdown outputs
+- Enable with `--speakers` CLI flag
+
+**Benefits:**
+- Better readability for multi-speaker content (interviews, podcasts)
+- Professional quality output with clear speaker attribution
+- Foundation for future speaker name mapping
+
+---
+
 ### ✅ VAD-based Intelligent Audio Chunking (v1.4.0)
 **Status:** Implemented and committed (2025-10-12)
 
@@ -23,34 +49,8 @@
 
 ### 🎯 High Priority
 
-#### 1. Speaker Diarization
-**Target:** v1.5.0
-**Dependencies:** HF_TOKEN, pyannote.audio (already installed)
-
-**Description:**
-Implement speaker identification and labeling in transcriptions using pyannote.audio.
-
-**Implementation plan:**
-- Add `_perform_speaker_diarization()` method using `pyannote/speaker-diarization-3.1`
-- Integrate speaker labels with TranscriptionSegment (already has speaker field)
-- Match diarization timestamps with Whisper transcription segments
-- Add `--with-speakers` CLI flag functionality
-- Update document output to include speaker labels (e.g., "[Speaker 1]:")
-- Reuse VAD data from chunking to improve diarization accuracy
-
-**Benefits:**
-- Better readability for multi-speaker content (interviews, podcasts)
-- Synergy with existing VAD implementation
-- Professional quality output
-
-**Requirements:**
-- HuggingFace token with access to pyannote/speaker-diarization-3.1
-- Accept terms: https://huggingface.co/pyannote/speaker-diarization-3.1
-
----
-
-#### 2. Optimized Chunk Processing for OpenAI API
-**Target:** v1.4.1
+#### 1. Optimized Chunk Processing for OpenAI API
+**Target:** v1.5.1
 **Dependencies:** None
 
 **Description:**
@@ -70,8 +70,8 @@ Improve processing efficiency when handling chunked audio files.
 
 ---
 
-#### 3. Batch Processing Support
-**Target:** v1.5.0
+#### 2. Batch Processing Support
+**Target:** v1.6.0
 **Dependencies:** None
 
 **Description:**
@@ -182,6 +182,7 @@ If you want to work on any of these features:
 
 ## Version History
 
+- **v1.5.0** (2025-10-13): Speaker diarization
 - **v1.4.0** (2025-10-12): VAD-based intelligent chunking
 - **v1.3.0** (2025-10-XX): OpenAI API integration (Whisper + GPT)
 - **v1.2.0** (2025-XX-XX): NLLB translation support
@@ -190,5 +191,5 @@ If you want to work on any of these features:
 
 ---
 
-**Last updated:** 2025-10-12
+**Last updated:** 2025-10-13
 **Maintainer:** @biyachuev

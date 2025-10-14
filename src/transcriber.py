@@ -151,13 +151,18 @@ class Transcriber:
         if initial_prompt:
             logger.info("Using initial prompt (length: %d chars)", len(initial_prompt))
             logger.debug("Prompt preview (first 80 chars): %s", format_log_preview(initial_prompt))
-
-        if with_speakers:
-            logger.warning("Speaker diarisation is not available in the current release")
+        else:
+            logger.warning("No initial prompt provided. Consider using --whisper-prompt for better accuracy.")
 
         # Use OpenAI API if specified
         if self.method == TranscribeOptions.WHISPER_OPENAI_API:
-            return self._transcribe_with_openai_api(audio_path, language, initial_prompt)
+            segments = self._transcribe_with_openai_api(audio_path, language, initial_prompt)
+
+            # Apply speaker diarization if requested
+            if with_speakers:
+                segments = self._perform_speaker_diarization(audio_path, segments)
+
+            return segments
 
         self._load_model()
 
@@ -222,6 +227,15 @@ class Transcriber:
         logger.info("Detected language: %s", detected_language)
         logger.info("Transcription finished. Generated %d segments", len(segments))
 
+        # Clean up hallucinations
+        logger.info("Cleaning up potential hallucinations...")
+        segments = self._clean_hallucinations(segments, expected_language=detected_language)
+        logger.info("After cleanup: %d segments remain", len(segments))
+
+        # Apply speaker diarization if requested
+        if with_speakers:
+            segments = self._perform_speaker_diarization(audio_path, segments)
+
         return segments
 
     def _get_vad_pipeline(self):
@@ -268,6 +282,180 @@ class Transcriber:
             logger.warning("Failed to load VAD pipeline: %s. Using simple splitting.", e)
             self._vad_pipeline = None
             return None
+
+    def _get_diarization_pipeline(self):
+        """
+        Get or create speaker diarization pipeline.
+
+        Returns:
+            pyannote diarization pipeline or None if not available.
+        """
+        if hasattr(self, '_diarization_pipeline'):
+            return self._diarization_pipeline
+
+        try:
+            from pyannote.audio import Pipeline
+            import os
+
+            # Check if HuggingFace token is available
+            hf_token = os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN")
+
+            if not hf_token:
+                logger.warning(
+                    "HUGGINGFACE_TOKEN not found. Speaker diarization disabled. "
+                    "To enable:\n"
+                    "  1. Get token: https://huggingface.co/settings/tokens\n"
+                    "  2. Accept terms: https://huggingface.co/pyannote/speaker-diarization-3.1\n"
+                    "  3. Set HF_TOKEN in .env"
+                )
+                self._diarization_pipeline = None
+                return None
+
+            logger.info("Loading pyannote speaker diarization pipeline...")
+            self._diarization_pipeline = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization-3.1",
+                token=hf_token
+            )
+            logger.info("Speaker diarization pipeline loaded successfully")
+            return self._diarization_pipeline
+
+        except ImportError:
+            logger.warning(
+                "pyannote.audio not installed. Speaker diarization disabled. "
+                "Install with: pip install pyannote.audio"
+            )
+            self._diarization_pipeline = None
+            return None
+        except Exception as e:
+            logger.warning("Failed to load diarization pipeline: %s", e)
+            self._diarization_pipeline = None
+            return None
+
+    def _perform_speaker_diarization(
+        self,
+        audio_path: Path,
+        segments: List[TranscriptionSegment]
+    ) -> List[TranscriptionSegment]:
+        """
+        Perform speaker diarization and assign speaker labels to segments.
+
+        Args:
+            audio_path: Path to the audio file.
+            segments: Transcription segments without speaker labels.
+
+        Returns:
+            Updated segments with speaker labels.
+        """
+        diarization_pipeline = self._get_diarization_pipeline()
+        if not diarization_pipeline:
+            logger.warning("Speaker diarization not available. Segments will not have speaker labels.")
+            return segments
+
+        logger.info("Performing speaker diarization...")
+
+        try:
+            # Load audio with soundfile/librosa instead of relying on torchcodec
+            # This avoids FFmpeg library issues
+            try:
+                import torch as torch_lib
+                import numpy as np
+
+                # Try soundfile first (simpler, no lzma dependency)
+                try:
+                    import soundfile as sf
+                    logger.debug("Loading audio with soundfile...")
+                    waveform_np, sample_rate = sf.read(str(audio_path), dtype='float32')
+
+                    # Convert to mono if stereo
+                    if len(waveform_np.shape) > 1:
+                        waveform_np = waveform_np.mean(axis=1)
+
+                    # Resample to 16kHz if needed
+                    if sample_rate != 16000:
+                        # Simple resampling using scipy
+                        from scipy import signal
+                        num_samples = int(len(waveform_np) * 16000 / sample_rate)
+                        waveform_np = signal.resample(waveform_np, num_samples)
+                        sample_rate = 16000
+
+                except ImportError:
+                    # Fallback to librosa
+                    import librosa
+                    logger.debug("Loading audio with librosa...")
+                    waveform_np, sample_rate = librosa.load(str(audio_path), sr=16000, mono=True)
+
+                # Convert to torch tensor with correct shape (channel, time)
+                waveform = torch_lib.from_numpy(np.asarray(waveform_np, dtype=np.float32)).unsqueeze(0)
+
+                # Create audio dict that pyannote expects
+                audio_dict = {
+                    "waveform": waveform,
+                    "sample_rate": sample_rate
+                }
+
+                logger.debug("Running diarization with preloaded audio...")
+                # Run diarization with preloaded audio
+                diarization = diarization_pipeline(audio_dict)
+
+            except ImportError as e:
+                logger.warning("Audio loading libraries not available (%s). Attempting direct file loading...", e)
+                # Fallback to direct file path (may fail if FFmpeg not available)
+                diarization = diarization_pipeline(str(audio_path))
+            except Exception as e:
+                logger.warning("Failed to load audio (%s: %s). Attempting direct file loading...",
+                             type(e).__name__, str(e))
+                # Fallback to direct file path (may fail if FFmpeg not available)
+                diarization = diarization_pipeline(str(audio_path))
+
+            # Build a mapping of time ranges to speakers
+            # Format: list of (start, end, speaker_label)
+            # Note: diarization returns DiarizeOutput, need to access .speaker_diarization
+            speaker_timeline = []
+            diarization_annotation = diarization.speaker_diarization
+            for turn, _, speaker in diarization_annotation.itertracks(yield_label=True):
+                speaker_timeline.append((turn.start, turn.end, speaker))
+
+            logger.info("Found %d speaker turns", len(speaker_timeline))
+
+            # Assign speakers to transcription segments
+            updated_segments = []
+            for seg in segments:
+                # Find which speaker(s) were active during this segment
+                # Use the speaker with the most overlap
+                seg_mid = (seg.start + seg.end) / 2
+
+                best_speaker = None
+                max_overlap = 0.0
+
+                for spk_start, spk_end, spk_label in speaker_timeline:
+                    # Calculate overlap between segment and speaker turn
+                    overlap_start = max(seg.start, spk_start)
+                    overlap_end = min(seg.end, spk_end)
+                    overlap_duration = max(0.0, overlap_end - overlap_start)
+
+                    if overlap_duration > max_overlap:
+                        max_overlap = overlap_duration
+                        best_speaker = spk_label
+
+                # Create updated segment with speaker label
+                updated_seg = TranscriptionSegment(
+                    start=seg.start,
+                    end=seg.end,
+                    text=seg.text,
+                    speaker=best_speaker
+                )
+                updated_segments.append(updated_seg)
+
+            # Count unique speakers
+            unique_speakers = set(seg.speaker for seg in updated_segments if seg.speaker)
+            logger.info("Identified %d unique speakers", len(unique_speakers))
+
+            return updated_segments
+
+        except Exception as e:
+            logger.error("Speaker diarization failed: %s", e)
+            logger.warning("Continuing without speaker labels")
+            return segments
 
     def _validate_audio_path(self, audio_path: Path) -> None:
         """
@@ -729,6 +917,11 @@ class Transcriber:
             logger.info("Detected language: %s", detected_language)
             logger.info("Transcription finished. Generated %d segments", len(segments))
 
+            # Clean up hallucinations
+            logger.info("Cleaning up potential hallucinations...")
+            segments = self._clean_hallucinations(segments, expected_language=detected_language)
+            logger.info("After cleanup: %d segments remain", len(segments))
+
             return segments
 
         finally:
@@ -782,6 +975,169 @@ class Transcriber:
 
         return False
 
+    def _clean_hallucinations(
+        self,
+        segments: List[TranscriptionSegment],
+        expected_language: str = "ru"
+    ) -> List[TranscriptionSegment]:
+        """
+        Clean up common Whisper hallucinations from transcription segments.
+
+        Whisper may generate nonsensical text when encountering silence, noise,
+        or unclear audio. This function detects and removes such hallucinations.
+
+        Args:
+            segments: Original transcription segments.
+            expected_language: Expected language code (ru, en, etc.).
+
+        Returns:
+            Cleaned segments with hallucinations removed or fixed.
+        """
+        import unicodedata
+
+        # Common hallucination patterns
+        hallucination_patterns = [
+            # Subscription/outro phrases (English)
+            r"(?i)(thanks?\s+for\s+watching|please\s+subscribe|like\s+and\s+subscribe)",
+            r"(?i)(don't\s+forget\s+to|hit\s+the\s+bell|smash\s+that)",
+
+            # Random names that appear in silence
+            r"(?i)(shepherd\s+bettsies?|betsy|campo)",
+
+            # Short nonsensical fragments
+            r"^\s*[\w\-]{1,3}\s*$",  # Very short words alone
+
+            # Music/sound effect markers
+            r"^\s*\[.*?\]\s*$",  # Already bracketed items
+            r"(?i)^\s*(music|applause|laughter)\s*$",
+        ]
+
+        # Patterns indicating mixed-language hallucinations
+        def has_suspicious_mix(text: str) -> bool:
+            """Check if text has suspicious language mixing."""
+            # Count Cyrillic, Latin, and other scripts
+            cyrillic = sum(1 for c in text if '\u0400' <= c <= '\u04FF')
+            latin = sum(1 for c in text if c.isascii() and c.isalpha())
+            other = sum(1 for c in text if unicodedata.category(c).startswith('Lo'))
+
+            total_chars = cyrillic + latin + other
+            if total_chars == 0:
+                return False
+
+            # Non-Latin, non-Cyrillic scripts appearing (e.g., Korean, Chinese, Arabic) in wrong context
+            # This is a STRONG indicator of hallucination
+            if other > 0 and expected_language in ["ru", "en"]:
+                # Even a single Korean/Chinese character is suspicious
+                # But only if there are multiple or if it's a significant portion
+                if other >= 2 or (other > 0 and other / (total_chars + 1) > 0.03):
+                    return True
+
+            # For Russian: check if it's PURE English (no Cyrillic at all) and short
+            # This catches segments like "got interesting questionable"
+            if expected_language == "ru":
+                if cyrillic == 0 and latin > 10 and total_chars < 50:
+                    # No Russian characters, but has English - likely hallucination
+                    # Exception: very common technical terms
+                    text_lower = text.lower().strip()
+                    common_terms = ["ai", "genai", "chatgpt", "openai", "api", "rag", "ml", "gpt"]
+                    # If it's ONLY common terms, keep it
+                    words = re.findall(r'\b\w+\b', text_lower)
+                    if words and all(word in common_terms or len(word) <= 2 for word in words):
+                        return False
+                    return True
+
+            return False
+
+        def is_hallucination(text: str) -> bool:
+            """Check if text segment is likely a hallucination."""
+            text_stripped = text.strip()
+
+            # Empty or very short
+            if len(text_stripped) < 3:
+                return True
+
+            # Check against known patterns
+            for pattern in hallucination_patterns:
+                if re.search(pattern, text_stripped):
+                    return True
+
+            # Check for suspicious language mixing
+            if has_suspicious_mix(text_stripped):
+                return True
+
+            # Check for segments with too many special/unknown characters
+            special_chars = sum(1 for c in text_stripped if not (c.isalnum() or c.isspace() or c in ".,!?;:-—"))
+            if len(text_stripped) > 0 and special_chars / len(text_stripped) > 0.3:
+                return True
+
+            return False
+
+        def clean_segment_text(text: str) -> str:
+            """Clean individual segment text from partial hallucinations."""
+            # Remove non-standard Unicode characters (e.g., Korean, weird symbols)
+            cleaned = ""
+            for char in text:
+                cat = unicodedata.category(char)
+                # Keep Latin, Cyrillic, common punctuation, spaces
+                if (cat.startswith('L') or cat.startswith('P') or
+                    cat.startswith('Z') or cat.startswith('N') or
+                    char in ".,!?;:—–-\"'()[]"):
+                    # But filter out scripts we don't expect
+                    if expected_language == "ru":
+                        # Allow Cyrillic, Latin (for terms), common chars
+                        if ('\u0400' <= char <= '\u04FF' or  # Cyrillic
+                            char.isascii() or  # ASCII (Latin + punct)
+                            char.isspace()):
+                            cleaned += char
+                    elif expected_language == "en":
+                        if char.isascii() or char.isspace():
+                            cleaned += char
+                    else:
+                        cleaned += char
+
+            # Remove multiple spaces
+            cleaned = re.sub(r'\s+', ' ', cleaned)
+
+            return cleaned.strip()
+
+        # Process segments
+        cleaned_segments = []
+        hallucination_count = 0
+
+        for seg in segments:
+            # Check if it's a hallucination BEFORE cleaning
+            # (cleaning removes foreign characters, which we need to detect)
+            if is_hallucination(seg.text):
+                hallucination_count += 1
+                logger.debug(
+                    "Removed hallucination at %.1f-%.1fs: %s",
+                    seg.start, seg.end, seg.text[:50]
+                )
+                continue
+
+            # Clean the text after hallucination check
+            cleaned_text = clean_segment_text(seg.text)
+
+            # Keep the segment with cleaned text
+            if cleaned_text:  # Only keep non-empty segments
+                cleaned_segments.append(
+                    TranscriptionSegment(
+                        start=seg.start,
+                        end=seg.end,
+                        text=cleaned_text,
+                        speaker=seg.speaker
+                    )
+                )
+
+        if hallucination_count > 0:
+            logger.info(
+                "Cleaned %d hallucination segments (%.1f%% of total)",
+                hallucination_count,
+                100 * hallucination_count / len(segments) if segments else 0
+            )
+
+        return cleaned_segments
+
     def segments_to_text(self, segments: List[TranscriptionSegment]) -> str:
         """
         Convert transcription segments into plain text.
@@ -830,8 +1186,9 @@ class Transcriber:
                 )
             return updated_segments
 
-        logger.warning(
-            "Paragraph count (%d) does not match segment count (%d). Rebuilding segments.",
+        logger.info(
+            "Refined text has %d paragraphs vs %d original segments. "
+            "This is expected when LLM groups text into logical paragraphs. Rebuilding segments with evenly distributed timestamps.",
             len(paragraphs),
             len(segments),
         )
@@ -864,6 +1221,35 @@ class Transcriber:
 
         return updated_segments
 
+    def segments_to_text_with_speakers(
+        self,
+        segments: List[TranscriptionSegment],
+    ) -> str:
+        """
+        Convert transcription segments to text with speaker labels (no timestamps).
+        Speaker labels are only shown when the speaker changes.
+
+        Args:
+            segments: Transcription segments with speaker information.
+
+        Returns:
+            Text with speaker labels in format: [SPEAKER_00] text
+        """
+        lines = []
+        previous_speaker = None
+
+        for seg in segments:
+            # Only add speaker label when speaker changes
+            if seg.speaker and seg.speaker != previous_speaker:
+                speaker = f"[{seg.speaker}] "
+                previous_speaker = seg.speaker
+            else:
+                speaker = ""
+
+            lines.append(f"{speaker}{seg.text}")
+
+        return "\n\n".join(lines)
+
     def segments_to_text_with_timestamps(
         self,
         segments: List[TranscriptionSegment],
@@ -871,6 +1257,7 @@ class Transcriber:
     ) -> str:
         """
         Convert segments to text including timestamps (and speakers if available).
+        Speaker labels are only shown when the speaker changes.
 
         Args:
             segments: Transcription segments.
@@ -880,9 +1267,18 @@ class Transcriber:
             Multiline string with timestamps.
         """
         lines = []
+        previous_speaker = None
+
         for seg in segments:
             timestamp = format_timestamp(seg.start)
-            speaker = f"[{seg.speaker}] " if with_speakers and seg.speaker else ""
+
+            # Only add speaker label when speaker changes
+            if with_speakers and seg.speaker and seg.speaker != previous_speaker:
+                speaker = f"[{seg.speaker}] "
+                previous_speaker = seg.speaker
+            else:
+                speaker = ""
+
             lines.append(f"[{timestamp}] {speaker}{seg.text}")
 
         return "\n\n".join(lines)

@@ -112,6 +112,7 @@ class DocumentWriter:
         transcribe_method: str = "",
         translate_method: str = "",
         with_timestamps: bool = True,
+        with_speakers: bool = False,
     ) -> tuple[Path, Path]:
         """
         Build documents directly from transcription/translation segments.
@@ -123,6 +124,7 @@ class DocumentWriter:
             transcribe_method: Transcription backend label.
             translate_method: Translation backend label.
             with_timestamps: Whether to include timestamps.
+            with_speakers: Whether to include speaker labels.
 
         Returns:
             Tuple with DOCX and Markdown paths.
@@ -135,7 +137,8 @@ class DocumentWriter:
         if translation_segments:
             if with_timestamps:
                 translation_text = transcriber.segments_to_text_with_timestamps(
-                    translation_segments
+                    translation_segments,
+                    with_speakers=with_speakers
                 )
             else:
                 translation_text = transcriber.segments_to_text(translation_segments)
@@ -150,10 +153,15 @@ class DocumentWriter:
 
         if with_timestamps:
             transcription_text = transcriber.segments_to_text_with_timestamps(
-                transcription_segments
+                transcription_segments,
+                with_speakers=with_speakers
             )
         else:
-            transcription_text = transcriber.segments_to_text(transcription_segments)
+            # Even without timestamps, we can show speaker labels
+            if with_speakers:
+                transcription_text = transcriber.segments_to_text_with_speakers(transcription_segments)
+            else:
+                transcription_text = transcriber.segments_to_text(transcription_segments)
 
         sections.append(
             {

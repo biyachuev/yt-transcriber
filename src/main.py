@@ -376,7 +376,8 @@ def process_text_file(
             translation_segments=None,
             transcribe_method=f"Refined with {refine_model}",
             translate_method="",
-            with_timestamps=False
+            with_timestamps=False,
+            with_speakers=False
         )
         logger.info("  Saved refined markdown: %s", md_path_refined)
 
@@ -391,7 +392,8 @@ def process_text_file(
                 translation_segments=translated_segs,
                 transcribe_method=f"Loaded from {text_path_obj.suffix}" + (f" + {refine_model}" if refine_model else ""),
                 translate_method=method,
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=False
             )
             logger.info("  Saved translation markdown: %s", md_path_trans)
 
@@ -406,7 +408,8 @@ def process_text_file(
                 translation_segments=refined_translated_segs,
                 transcribe_method=f"Loaded from {text_path_obj.suffix}" + (f" + {refine_model}" if refine_model else ""),
                 translate_method=f"{method} + {refine_translation_model}",
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=False
             )
             logger.info("  Saved refined translation markdown: %s", md_path_trans_refined)
 
@@ -814,7 +817,8 @@ def process_youtube_video(
             translation_segments=None,
             transcribe_method=transcribe_method,
             translate_method="",
-            with_timestamps=False
+            with_timestamps=False,
+            with_speakers=with_speakers
         )
 
         # Refined transcript (with translation if available, not LLM-polished).
@@ -825,7 +829,8 @@ def process_youtube_video(
             translation_segments=translation_segments_refined,
             transcribe_method=f"{transcribe_method} + {refine_model}",
             translate_method=translate_method_str,
-            with_timestamps=False
+            with_timestamps=False,
+            with_speakers=with_speakers
         )
 
         # Add refined translation document if available.
@@ -837,7 +842,8 @@ def process_youtube_video(
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=f"{transcribe_method} + {refine_model}" if refine_model else transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             logger.info("\n" + "=" * 60)
@@ -876,7 +882,8 @@ def process_youtube_video(
                 translation_segments=translation_segments,
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             # Translation refined via LLM.
@@ -887,7 +894,8 @@ def process_youtube_video(
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             logger.info("\n" + "=" * 60)
@@ -908,7 +916,8 @@ def process_youtube_video(
                 translation_segments=translation_segments,
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             logger.info("\n" + "=" * 60)
@@ -1117,7 +1126,8 @@ def process_local_video(
             translation_segments=None,
             transcribe_method=transcribe_method,
             translate_method="",
-            with_timestamps=False
+            with_timestamps=False,
+            with_speakers=with_speakers
         )
 
         # Refined transcript (with translation if available).
@@ -1128,7 +1138,8 @@ def process_local_video(
             translation_segments=translation_segments_refined,
             transcribe_method=f"{transcribe_method} + {refine_model}",
             translate_method=translate_method_str,
-            with_timestamps=False
+            with_timestamps=False,
+            with_speakers=with_speakers
         )
 
         # Create refined translation document if available.
@@ -1140,7 +1151,8 @@ def process_local_video(
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=f"{transcribe_method} + {refine_model}" if refine_model else transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             logger.info("\n" + "=" * 60)
@@ -1179,7 +1191,8 @@ def process_local_video(
                 translation_segments=translation_segments,
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             # LLM-refined translation.
@@ -1190,7 +1203,8 @@ def process_local_video(
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             logger.info("\n" + "=" * 60)
@@ -1211,7 +1225,8 @@ def process_local_video(
                 translation_segments=translation_segments,
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             logger.info("\n" + "=" * 60)
@@ -1408,7 +1423,8 @@ def process_local_audio(
             translation_segments=None,
             transcribe_method=transcribe_method,
             translate_method="",
-            with_timestamps=False
+            with_timestamps=False,
+            with_speakers=with_speakers
         )
 
         # Refined transcript (with translation if available).
@@ -1419,7 +1435,8 @@ def process_local_audio(
             translation_segments=translation_segments_refined,
             transcribe_method=f"{transcribe_method} + {refine_model}",
             translate_method=translate_method_str,
-            with_timestamps=False
+            with_timestamps=False,
+            with_speakers=with_speakers
         )
 
         # Create refined translation document if available.
@@ -1431,7 +1448,8 @@ def process_local_audio(
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=f"{transcribe_method} + {refine_model}" if refine_model else transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             logger.info("\n" + "=" * 60)
@@ -1470,7 +1488,8 @@ def process_local_audio(
                 translation_segments=translation_segments,
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             # LLM-refined translation.
@@ -1481,7 +1500,8 @@ def process_local_audio(
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             logger.info("\n" + "=" * 60)
@@ -1502,7 +1522,8 @@ def process_local_audio(
                 translation_segments=translation_segments,
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
-                with_timestamps=False
+                with_timestamps=False,
+                with_speakers=with_speakers
             )
 
             logger.info("\n" + "=" * 60)
