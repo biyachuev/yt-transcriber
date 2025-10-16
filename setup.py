@@ -12,14 +12,14 @@ long_description = (this_directory / "README.md").read_text(encoding='utf-8')
 requirements = (this_directory / "requirements.txt").read_text().splitlines()
 
 setup(
-    name="youtube-transcriber",
+    name="yt-transcriber",
     version="1.0.0",
     author="Your Name",
     author_email="your.email@example.com",
     description="Universal toolkit for transcribing and translating videos",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/youtube-transcriber",
+    url="https://github.com/yourusername/yt-transcriber",
     packages=find_packages(exclude=["tests", "tests.*"]),
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -38,7 +38,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "youtube-transcriber=src.main:main",
+            "yt-transcriber=src.main:main",
         ],
     },
     include_package_data=True,

@@ -37,16 +37,36 @@ class TestSpeakerDiarization:
 
         mock_pipeline = Mock()
 
-        with patch.dict('os.environ', {'HF_TOKEN': 'test_token'}):
-            with patch('pyannote.audio.Pipeline') as mock_pipeline_class:
-                mock_pipeline_class.from_pretrained.return_value = mock_pipeline
-                pipeline = transcriber._get_diarization_pipeline()
+        # Clear any existing environment variables to ensure clean test
+        with patch.dict('os.environ', {'HF_TOKEN': 'test_token'}, clear=False):
+            # Remove any other HF token variables
+            with patch.dict('os.environ', {'HUGGINGFACE_TOKEN': ''}, clear=False):
+                with patch('pyannote.audio.Pipeline') as mock_pipeline_class:
+                    # Mock from_pretrained to have 'token' parameter in signature
+                    mock_from_pretrained = Mock(return_value=mock_pipeline)
+                    # Create a mock signature with 'token' parameter
+                    import inspect
+                    mock_signature = Mock()
+                    mock_signature.parameters = {'token': Mock(), 'revision': Mock()}
+                    with patch('inspect.signature', return_value=mock_signature):
+                        mock_pipeline_class.from_pretrained = mock_from_pretrained
+                        # Also need to patch os.environ.get to return our test token
+                        def mock_get_env(key, default=None):
+                            if key == "HF_TOKEN":
+                                return 'test_token'
+                            elif key == "HUGGINGFACE_TOKEN":
+                                return None
+                            elif key == "PYANNOTE_DIARIZATION_REVISION":
+                                return None
+                            return default
+                        with patch('os.environ.get', side_effect=mock_get_env):
+                            pipeline = transcriber._get_diarization_pipeline()
 
         assert pipeline == mock_pipeline
-        mock_pipeline_class.from_pretrained.assert_called_once_with(
-            "pyannote/speaker-diarization-3.1",
-            token='test_token'
-        )
+        # Check that token was passed (might include revision too)
+        call_args = mock_from_pretrained.call_args
+        assert call_args[0][0] == "pyannote/speaker-diarization-3.1"
+        assert call_args[1].get('token') == 'test_token'
 
     @patch('src.transcriber.torch')
     @patch('src.transcriber.whisper')
@@ -104,7 +124,6 @@ class TestSpeakerDiarization:
 
         # Mock diarization pipeline
         mock_pipeline = Mock()
-        mock_diarization = Mock()
         mock_annotation = Mock()
 
         # Create mock speaker turns
@@ -118,13 +137,28 @@ class TestSpeakerDiarization:
         turn2.start = 6.0
         turn2.end = 12.0
 
-        mock_annotation.itertracks.return_value = [
-            (turn1, None, "SPEAKER_00"),
-            (turn2, None, "SPEAKER_01"),
-        ]
+        # pyannote.audio returns Annotation object directly, not wrapped
+        # itertracks needs yield_label parameter
+        def mock_itertracks(yield_label=False):
+            if yield_label:
+                return iter([
+                    (turn1, None, "SPEAKER_00"),
+                    (turn2, None, "SPEAKER_01"),
+                ])
+            return iter([(turn1, None), (turn2, None)])
 
-        mock_diarization.speaker_diarization = mock_annotation
-        mock_pipeline.return_value = mock_diarization
+        mock_annotation.itertracks = mock_itertracks
+        # Make sure mock_annotation doesn't have these attributes
+        # so the code uses it directly (fallback path in transcriber.py:680-682)
+        del mock_annotation.exclusive_speaker_diarization
+        del mock_annotation.speaker_diarization
+
+        # Pipeline should be callable and return annotation
+        # It can be called with dict or Path
+        def pipeline_call(audio_input):
+            return mock_annotation
+
+        mock_pipeline.side_effect = pipeline_call
         transcriber._diarization_pipeline = mock_pipeline
 
         segments = [
@@ -157,7 +191,6 @@ class TestSpeakerDiarization:
 
         # Mock diarization pipeline
         mock_pipeline = Mock()
-        mock_diarization = Mock()
         mock_annotation = Mock()
 
         # Speaker A: 0-5 seconds
@@ -170,13 +203,25 @@ class TestSpeakerDiarization:
         turn2.start = 5.0
         turn2.end = 10.0
 
-        mock_annotation.itertracks.return_value = [
-            (turn1, None, "SPEAKER_00"),
-            (turn2, None, "SPEAKER_01"),
-        ]
+        # pyannote.audio returns Annotation object directly, not wrapped
+        def mock_itertracks(yield_label=False):
+            if yield_label:
+                return iter([
+                    (turn1, None, "SPEAKER_00"),
+                    (turn2, None, "SPEAKER_01"),
+                ])
+            return iter([(turn1, None), (turn2, None)])
 
-        mock_diarization.speaker_diarization = mock_annotation
-        mock_pipeline.return_value = mock_diarization
+        mock_annotation.itertracks = mock_itertracks
+        # Make sure mock_annotation doesn't have these attributes
+        del mock_annotation.exclusive_speaker_diarization
+        del mock_annotation.speaker_diarization
+
+        # Pipeline should be callable and return annotation
+        def pipeline_call(audio_input):
+            return mock_annotation
+
+        mock_pipeline.side_effect = pipeline_call
         transcriber._diarization_pipeline = mock_pipeline
 
         # Segment that spans both speakers (4-6 seconds)
@@ -231,7 +276,6 @@ class TestSpeakerDiarization:
 
         # Mock diarization pipeline with 3 speakers
         mock_pipeline = Mock()
-        mock_diarization = Mock()
         mock_annotation = Mock()
 
         turn1 = Mock()
@@ -246,14 +290,26 @@ class TestSpeakerDiarization:
         turn3.start = 6.0
         turn3.end = 9.0
 
-        mock_annotation.itertracks.return_value = [
-            (turn1, None, "SPEAKER_00"),
-            (turn2, None, "SPEAKER_01"),
-            (turn3, None, "SPEAKER_02"),
-        ]
+        # pyannote.audio returns Annotation object directly, not wrapped
+        def mock_itertracks(yield_label=False):
+            if yield_label:
+                return iter([
+                    (turn1, None, "SPEAKER_00"),
+                    (turn2, None, "SPEAKER_01"),
+                    (turn3, None, "SPEAKER_02"),
+                ])
+            return iter([(turn1, None), (turn2, None), (turn3, None)])
 
-        mock_diarization.speaker_diarization = mock_annotation
-        mock_pipeline.return_value = mock_diarization
+        mock_annotation.itertracks = mock_itertracks
+        # Make sure mock_annotation doesn't have these attributes
+        del mock_annotation.exclusive_speaker_diarization
+        del mock_annotation.speaker_diarization
+
+        # Pipeline should be callable and return annotation
+        def pipeline_call(audio_input):
+            return mock_annotation
+
+        mock_pipeline.side_effect = pipeline_call
         transcriber._diarization_pipeline = mock_pipeline
 
         segments = [

@@ -1,5 +1,5 @@
 """
-Performance profiling script for youtube-transcriber
+Performance profiling script for yt-transcriber
 
 Usage:
     python profile_performance.py --test transcribe
@@ -129,7 +129,7 @@ def profile_utils():
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Profile youtube-transcriber performance')
+    parser = argparse.ArgumentParser(description='Profile yt-transcriber performance')
     parser.add_argument(
         '--test',
         choices=['transcribe', 'translate', 'files', 'utils', 'all'],
@@ -140,7 +140,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 70)
-    print("🚀 YOUTUBE TRANSCRIBER PERFORMANCE PROFILING")
+    print("🚀 YT-TRANSCRIBER PERFORMANCE PROFILING")
     print("=" * 70)
     print()
 

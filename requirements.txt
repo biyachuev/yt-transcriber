@@ -23,7 +23,13 @@ pydantic-settings>=2.1.0
 openai>=1.6.0
 
 # Optional: Speaker diarization (расширенная версия)
-pyannote.audio>=3.1.0
+# Note: pinned to 3.x due to breaking changes in 4.0+ (revision handling)
+pyannote.audio>=3.1.0,<4.0.0
+omegaconf>=2.3.0
+
+# Optional: Audio processing (расширенная версия)
+librosa>=0.11.0
+noisereduce>=3.0.0
 
 # Optional: Text file processing (расширенная версия)
 python-docx>=1.1.0

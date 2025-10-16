@@ -9,7 +9,7 @@ Get up and running with YouTube Transcriber in five minutes.
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd youtube-transcriber
+cd yt-transcriber
 
 # Create a virtual environment
 python -m venv venv
@@ -104,7 +104,7 @@ python -m src.main --url "URL" --transcribe whisper_base --translate NLLB
 ## 📁 Where to find results
 
 ```
-youtube-transcriber/
+yt-transcriber/
 ├── output/              # ← Processed documents
 │   ├── Video_Title.docx
 │   └── Video_Title.md
@@ -239,7 +239,7 @@ Speedups:
 ## 💬 Need help?
 
 - Check the [FAQ](FAQ.md)
-- Open an [issue on GitHub](https://github.com/yourusername/youtube-transcriber/issues)
+- Open an [issue on GitHub](https://github.com/yourusername/yt-transcriber/issues)
 - Reach out to the maintainers
 
 ---

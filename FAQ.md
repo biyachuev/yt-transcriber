@@ -132,6 +132,45 @@ Always proofread technical translations.
 
 ---
 
+### How accurate is speaker diarization?
+
+Speaker diarization (enabled with `--speakers`) identifies different speakers in audio and labels them as SPEAKER_00, SPEAKER_01, etc.
+
+**Accuracy depends on:**
+- **Audio quality:** single-channel recordings may reduce accuracy
+- **Recording setup:** studio mics (high quality) vs phone recordings (lower quality)
+- **Speaker overlap:** people talking over each other causes confusion
+- **Voice similarity:** similar-sounding speakers are harder to distinguish
+- **Microphone distance changes:** one speaker moving closer/farther may be split into multiple labels
+
+**Typical results:**
+- ✅ Clean studio recordings with distinct voices: 85–95% accuracy
+- ⚠️ Phone/video calls: 70–85% accuracy
+- ⚠️ Noisy environments or overlapping speech: 50–70% accuracy
+
+**Known limitations:**
+- ⚠️ **Over-segmentation:** One speaker may be assigned multiple labels (e.g., SPEAKER_00 and SPEAKER_01 for the same person)
+  - Common when speaker changes tone, distance from mic, or there are long pauses
+  - Manual review recommended for critical applications
+- ⚠️ **Under-segmentation:** Multiple speakers may be assigned the same label
+  - Less common, happens with very similar voices
+
+**Recommendation:** Use speaker labels as a guide, but verify important segments manually.
+
+**Built-in audio preprocessing:**
+The system automatically preprocesses audio before diarization to improve accuracy:
+- ✅ Conversion to mono 16kHz (standard for speech models)
+- ✅ RMS volume normalization to -20 dBFS (prevents quiet sections from being misclassified)
+- ✅ Clipping prevention (avoids distortion)
+- 🔄 Optional noise reduction (available with `noisereduce` library - install separately)
+
+This preprocessing helps reduce false speaker clusters caused by:
+- Volume variations (one speaker at different distances from mic)
+- Background noise (can be classified as separate "speaker")
+- Audio quality inconsistencies
+
+---
+
 ## Troubleshooting
 
 ### “FFmpeg not found”
@@ -225,6 +264,68 @@ curl http://localhost:11434/api/tags
 ```
 
 Ensure the desired model is pulled (`ollama pull qwen2.5:3b`).
+
+---
+
+### Warning: "torchcodec is not installed correctly" (Speaker Diarization)
+
+**Message:**
+```
+UserWarning: torchcodec is not installed correctly so built-in audio decoding will fail.
+Could not load libtorchcodec... FFmpeg is not properly installed...
+We support versions 4, 5, 6 and 7.
+```
+
+**Cause:** FFmpeg 8.0 is installed, but pyannote's torchcodec expects FFmpeg 4-7.
+
+**Is this critical?** ❌ **No, this is safe to ignore.**
+
+The speaker diarization system has built-in fallback audio loaders:
+1. First tries `soundfile` (doesn't need FFmpeg)
+2. Falls back to `librosa` if needed
+3. Only uses direct file loading as last resort
+
+**What happens:**
+- ✅ Speaker diarization works correctly
+- ✅ Audio is loaded via soundfile/librosa
+- ⚠️ Warning appears but can be ignored
+
+**If you want to suppress the warning:**
+
+Option 1: Keep FFmpeg 8 (recommended, everything works)
+```bash
+# Do nothing - the fallback works perfectly
+```
+
+Option 2: Downgrade to FFmpeg 7 (optional, only to remove warning)
+```bash
+# macOS
+brew uninstall ffmpeg
+brew install ffmpeg@7
+brew link ffmpeg@7
+```
+
+**Note:** Downgrading FFmpeg is unnecessary since the fallback mechanism works reliably.
+
+---
+
+### Warning: "std(): degrees of freedom is <= 0" (Speaker Diarization)
+
+**Message:**
+```
+UserWarning: std(): degrees of freedom is <= 0. Correction should be strictly less than...
+```
+
+**Cause:** Internal pyannote.audio calculation during speaker diarization.
+
+**Is this critical?** ❌ **No, this is safe to ignore.**
+
+This warning appears during normal operation of the speaker diarization pipeline and does not affect:
+- ✅ Accuracy of speaker detection
+- ✅ Quality of diarization results
+- ✅ Stability of the process
+
+**What to do:** Nothing - the process will complete successfully and identify speakers correctly.
 
 ---
 

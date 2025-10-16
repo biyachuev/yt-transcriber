@@ -177,21 +177,23 @@ def create_whisper_prompt_with_llm(
     metadata: dict,
     use_ollama: bool = True,
     model: str = "qwen2.5:3b",
+    backend: str = "ollama",
 ) -> str:
     """
     Build a Whisper prompt from metadata using a local LLM.
 
     Args:
         metadata: Video metadata dictionary.
-        use_ollama: Whether to call Ollama for prompt generation.
-        model: Ollama model name.
+        use_ollama: Whether to call Ollama for prompt generation (deprecated, use backend instead).
+        model: Model name (Ollama or OpenAI model).
+        backend: Backend to use ('ollama' or 'openai_api').
 
     Returns:
         Generated Whisper prompt.
     """
     from .logger import logger
 
-    if not use_ollama:
+    if not use_ollama and backend == "ollama":
         return create_whisper_prompt(metadata)
 
     context_parts = []
@@ -242,68 +244,88 @@ def create_whisper_prompt_with_llm(
 ПРОМПТ ДЛЯ WHISPER:"""
 
     try:
-        response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={
-                "model": model,
-                "prompt": llm_prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.3,
-                    "num_predict": 400,
-                    "stop": ["\n\n\n", "**", "EXPLANATION:", "Note:", "Пояснение:"],
-                },
-            },
-            timeout=30,
-        )
+        # Call the appropriate backend
+        if backend == "openai_api":
+            # Use OpenAI API
+            from openai import OpenAI
+            from .config import settings
 
-        if response.status_code == 200:
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "Ты — ассистент для генерации промптов для Whisper. Отвечай кратко, только текст промпта."},
+                    {"role": "user", "content": llm_prompt}
+                ],
+                temperature=0.3,
+                max_tokens=400,
+            )
+            prompt = response.choices[0].message.content.strip()
+        else:
+            # Use Ollama API
+            response = requests.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": model,
+                    "prompt": llm_prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.3,
+                        "num_predict": 400,
+                        "stop": ["\n\n\n", "**", "EXPLANATION:", "Note:", "Пояснение:"],
+                    },
+                },
+                timeout=30,
+            )
+
+            if response.status_code != 200:
+                logger.warning("%s returned status %s; falling back to standard prompt", backend, response.status_code)
+                return create_whisper_prompt(metadata)
+
             result = response.json()
             prompt = result.get("response", "").strip()
 
-            prompt = re.sub(r'Часть \d+[:\(][^\)]*[\):]?\s*', '', prompt)
-            prompt = re.sub(r'\(Контекст\)|\(Лексика\)|\(Привязка\)', '', prompt)
+        # Clean up the prompt regardless of backend
+        prompt = re.sub(r'Часть \d+[:\(][^\)]*[\):]?\s*', '', prompt)
+        prompt = re.sub(r'\(Контекст\)|\(Лексика\)|\(Привязка\)', '', prompt)
 
-            if ":" in prompt and prompt.index(":") < 20:
-                prompt = prompt.split(":", 1)[1].strip()
+        if ":" in prompt and prompt.index(":") < 20:
+            prompt = prompt.split(":", 1)[1].strip()
 
-            MAX_PROMPT_LENGTH = 600
+        MAX_PROMPT_LENGTH = 600
 
-            if len(prompt) > MAX_PROMPT_LENGTH:
-                logger.warning(
-                    "Generated prompt is too long (%d chars); trimming to %d",
-                    len(prompt),
-                    MAX_PROMPT_LENGTH,
-                )
+        if len(prompt) > MAX_PROMPT_LENGTH:
+            logger.warning(
+                "Generated prompt is too long (%d chars); trimming to %d",
+                len(prompt),
+                MAX_PROMPT_LENGTH,
+            )
 
-                truncated = prompt[:MAX_PROMPT_LENGTH]
-                last_period = truncated.rfind(".")
-                if last_period > MAX_PROMPT_LENGTH * 0.5:
-                    truncated = truncated[: last_period + 1]
-                else:
-                    last_comma = truncated.rfind(",")
-                    if last_comma > 0:
-                        truncated = truncated[:last_comma]
+            truncated = prompt[:MAX_PROMPT_LENGTH]
+            last_period = truncated.rfind(".")
+            if last_period > MAX_PROMPT_LENGTH * 0.5:
+                truncated = truncated[: last_period + 1]
+            else:
+                last_comma = truncated.rfind(",")
+                if last_comma > 0:
+                    truncated = truncated[:last_comma]
 
-                if "subtitles_sample" in str(metadata):
-                    first_sentence = metadata.get("subtitles_sample", "").split(".")[0]
-                    if first_sentence and first_sentence not in truncated:
-                        if len(truncated) + len(first_sentence) + 2 <= MAX_PROMPT_LENGTH:
-                            truncated = truncated.rstrip() + " " + first_sentence + "."
+            if "subtitles_sample" in str(metadata):
+                first_sentence = metadata.get("subtitles_sample", "").split(".")[0]
+                if first_sentence and first_sentence not in truncated:
+                    if len(truncated) + len(first_sentence) + 2 <= MAX_PROMPT_LENGTH:
+                        truncated = truncated.rstrip() + " " + first_sentence + "."
 
-                prompt = truncated
-                logger.info("Prompt trimmed to %d characters", len(prompt))
+            prompt = truncated
+            logger.info("Prompt trimmed to %d characters", len(prompt))
 
-            logger.info("LLM-generated Whisper prompt (%d chars)", len(prompt))
-            logger.debug("Prompt preview: %s", format_log_preview(prompt))
+        logger.info("LLM-generated Whisper prompt (%d chars) using %s", len(prompt), backend)
+        logger.debug("Prompt preview: %s", format_log_preview(prompt))
 
-            return prompt
-
-        logger.warning("Ollama returned status %s; falling back to standard prompt", response.status_code)
-        return create_whisper_prompt(metadata)
+        return prompt
 
     except Exception as e:
-        logger.warning("Failed to build prompt via LLM: %s", e)
+        logger.warning("Failed to build prompt via LLM (%s): %s", backend, e)
         logger.info("Falling back to standard prompt generator")
         return create_whisper_prompt(metadata)
 

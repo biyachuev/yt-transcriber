@@ -90,7 +90,7 @@ python -m src.main --url "..." --transcribe whisper_base --prompt prompt.txt
 ## 📁 Project layout
 
 ```
-youtube-transcriber/
+yt-transcriber/
 ├── src/              # Source code
 ├── tests/            # Automated tests
 ├── output/           # Results ← start here
@@ -192,9 +192,9 @@ ffmpeg -version          # verify FFmpeg
 ## 🐳 Docker essentials
 
 ```bash
-docker build -t youtube-transcriber .
+docker build -t yt-transcriber .
 
-docker run -v $(pwd)/output:/app/output   youtube-transcriber   --url "YOUTUBE_URL"   --transcribe whisper_base
+docker run -v $(pwd)/output:/app/output   yt-transcriber   --url "YOUTUBE_URL"   --transcribe whisper_base
 
 # docker compose
 docker-compose up           # foreground

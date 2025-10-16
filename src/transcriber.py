@@ -2,7 +2,9 @@
 Module responsible for audio transcription via Whisper.
 """
 import atexit
+import inspect
 import re
+from functools import wraps
 from pathlib import Path
 from typing import List, Dict, Optional, Set
 
@@ -35,6 +37,56 @@ def _cleanup_temp_chunks():
 
 # Register cleanup handler
 atexit.register(_cleanup_temp_chunks)
+
+_pyannote_revision_patch_applied = False
+
+
+def _patch_pyannote_revision_support():
+    """
+    Allow legacy 'repo@revision' checkpoint notation with newer pyannote.audio.
+    """
+    global _pyannote_revision_patch_applied
+    if _pyannote_revision_patch_applied:
+        return
+
+    try:
+        from pyannote.audio.core.model import Model
+        from pyannote.audio.core.pipeline import Pipeline as PyannotePipeline
+    except ImportError:
+        logger.debug("pyannote.audio not installed; skipping revision compatibility patch.")
+        return
+
+    def _patch_classmethod(cls, method_name: str) -> bool:
+        descriptor = cls.__dict__.get(method_name)
+        if not isinstance(descriptor, classmethod):
+            return False
+
+        original = descriptor.__func__
+        if getattr(original, "_yt_revision_patch", False):
+            return False
+
+        @wraps(original)
+        def wrapper(inner_cls, checkpoint, *args, **kwargs):
+            new_checkpoint = checkpoint
+            if isinstance(checkpoint, str):
+                base, sep, revision = checkpoint.partition("@")
+                if sep and "revision" not in kwargs:
+                    new_checkpoint = base
+                    kwargs["revision"] = revision
+            return original(inner_cls, new_checkpoint, *args, **kwargs)
+
+        wrapper._yt_revision_patch = True  # type: ignore[attr-defined]
+        setattr(cls, method_name, classmethod(wrapper))
+        return True
+
+    patched = False
+    for target_cls in (Model, PyannotePipeline):
+        patched |= _patch_classmethod(target_cls, "from_pretrained")
+
+    if patched:
+        logger.debug("Enabled legacy '@revision' checkpoints for pyannote.audio.")
+
+    _pyannote_revision_patch_applied = True
 
 
 class TranscriptionSegment:
@@ -246,14 +298,22 @@ class Transcriber:
             pyannote VAD pipeline or None if not available.
         """
         if hasattr(self, '_vad_pipeline'):
+            logger.debug("Returning cached VAD pipeline")
             return self._vad_pipeline
 
+        logger.debug("Initializing VAD pipeline...")
         try:
+            logger.debug("Attempting to import pyannote.audio...")
             from pyannote.audio import Pipeline
+            logger.debug("Successfully imported Pipeline from pyannote.audio")
             import os
+
+            _patch_pyannote_revision_support()
+            logger.debug("Revision patch applied")
 
             # Check if HuggingFace token is available
             hf_token = os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN")
+            vad_revision = os.environ.get("PYANNOTE_VAD_REVISION") or "main"
 
             if not hf_token:
                 logger.warning(
@@ -263,23 +323,88 @@ class Transcriber:
                 self._vad_pipeline = None
                 return None
 
-            logger.info("Loading pyannote VAD pipeline...")
-            self._vad_pipeline = Pipeline.from_pretrained(
-                "pyannote/voice-activity-detection",
-                token=hf_token
+            load_kwargs = self._build_pipeline_load_kwargs(
+                Pipeline,
+                hf_token,
+                vad_revision,
             )
+
+            # pyannote.audio 4.0+ requires explicit revision parameter
+            if "revision" not in load_kwargs and vad_revision:
+                load_kwargs["revision"] = vad_revision
+
+            token_param = None
+            if "token" in load_kwargs:
+                token_param = "token"
+            elif "use_auth_token" in load_kwargs:
+                token_param = "use_auth_token"
+            if token_param:
+                logger.debug("Passing HuggingFace token via '%s' parameter.", token_param)
+
+            logger.info(
+                "Loading pyannote VAD pipeline (revision: %s)...",
+                load_kwargs.get("revision", "default")
+            )
+            try:
+                self._vad_pipeline = Pipeline.from_pretrained(
+                    "pyannote/voice-activity-detection",
+                    **load_kwargs
+                )
+            except TypeError as type_error:
+                error_msg = str(type_error)
+                logger.debug(
+                    "Retrying VAD pipeline load due to signature mismatch: %s",
+                    type_error
+                )
+
+                fallback_kwargs = load_kwargs.copy()
+
+                # Try different combinations of parameters
+                # 1. First, try swapping token parameter name
+                if "unexpected keyword argument 'token'" in error_msg:
+                    # Version 3.x uses use_auth_token
+                    if "token" in fallback_kwargs:
+                        fallback_kwargs["use_auth_token"] = fallback_kwargs.pop("token")
+                elif "unexpected keyword argument 'use_auth_token'" in error_msg:
+                    # Version 4.x uses token
+                    if "use_auth_token" in fallback_kwargs:
+                        fallback_kwargs["token"] = fallback_kwargs.pop("use_auth_token")
+
+                # 2. Try removing revision if it's the issue
+                if "unexpected keyword argument 'revision'" in error_msg:
+                    fallback_kwargs.pop("revision", None)
+
+                if fallback_kwargs == load_kwargs:
+                    raise
+
+                self._vad_pipeline = Pipeline.from_pretrained(
+                    "pyannote/voice-activity-detection",
+                    **fallback_kwargs
+                )
+
             logger.info("VAD pipeline loaded successfully")
             return self._vad_pipeline
 
-        except ImportError:
-            logger.warning(
-                "pyannote.audio not installed. Falling back to simple time-based splitting. "
-                "Install with: pip install pyannote.audio"
-            )
+        except ImportError as import_error:
+            # Check if it's missing omegaconf specifically (common issue)
+            error_msg = str(import_error)
+            if "omegaconf" in error_msg.lower():
+                logger.warning(
+                    "Missing required dependency 'omegaconf' for pyannote.audio. "
+                    "Install with: pip install omegaconf>=2.3.0"
+                )
+            else:
+                logger.warning(
+                    "pyannote.audio not properly installed (%s). "
+                    "Falling back to simple time-based splitting. "
+                    "Install with: pip install pyannote.audio omegaconf",
+                    error_msg
+                )
             self._vad_pipeline = None
             return None
         except Exception as e:
             logger.warning("Failed to load VAD pipeline: %s. Using simple splitting.", e)
+            logger.debug("VAD pipeline error details:", exc_info=True)
             self._vad_pipeline = None
             return None
 
@@ -297,8 +422,11 @@ class Transcriber:
             from pyannote.audio import Pipeline
             import os
 
+            _patch_pyannote_revision_support()
+
             # Check if HuggingFace token is available
             hf_token = os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN")
+            diarization_revision = os.environ.get("PYANNOTE_DIARIZATION_REVISION") or "main"
 
             if not hf_token:
                 logger.warning(
@@ -311,11 +439,63 @@ class Transcriber:
                 self._diarization_pipeline = None
                 return None
 
-            logger.info("Loading pyannote speaker diarization pipeline...")
-            self._diarization_pipeline = Pipeline.from_pretrained(
-                "pyannote/speaker-diarization-3.1",
-                token=hf_token
+            load_kwargs = self._build_pipeline_load_kwargs(
+                Pipeline,
+                hf_token,
+                diarization_revision,
             )
+
+            token_param = None
+            if "token" in load_kwargs:
+                token_param = "token"
+            elif "use_auth_token" in load_kwargs:
+                token_param = "use_auth_token"
+            if token_param:
+                logger.debug(
+                    "Passing HuggingFace token via '%s' parameter for diarization pipeline.",
+                    token_param
+                )
+
+            logger.info(
+                "Loading pyannote speaker diarization pipeline (revision: %s)...",
+                load_kwargs.get("revision") or diarization_revision or "default"
+            )
+            try:
+                self._diarization_pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1",
+                    **load_kwargs
+                )
+            except TypeError as type_error:
+                error_msg = str(type_error)
+                logger.debug(
+                    "Retrying speaker diarization pipeline load due to signature mismatch: %s",
+                    type_error
+                )
+
+                fallback_kwargs = load_kwargs.copy()
+
+                # Try different combinations of parameters
+                # 1. First, try swapping token parameter name
+                if "unexpected keyword argument 'token'" in error_msg:
+                    # Version 3.x uses use_auth_token
+                    if "token" in fallback_kwargs:
+                        fallback_kwargs["use_auth_token"] = fallback_kwargs.pop("token")
+                elif "unexpected keyword argument 'use_auth_token'" in error_msg:
+                    # Version 4.x uses token
+                    if "use_auth_token" in fallback_kwargs:
+                        fallback_kwargs["token"] = fallback_kwargs.pop("use_auth_token")
+
+                # 2. Try removing revision if it's the issue
+                if "unexpected keyword argument 'revision'" in error_msg:
+                    fallback_kwargs.pop("revision", None)
+
+                if fallback_kwargs == load_kwargs:
+                    raise
+
+                self._diarization_pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1",
+                    **fallback_kwargs
+                )
             logger.info("Speaker diarization pipeline loaded successfully")
             return self._diarization_pipeline
 
@@ -330,6 +510,100 @@ class Transcriber:
             logger.warning("Failed to load diarization pipeline: %s", e)
             self._diarization_pipeline = None
             return None
+
+    def _preprocess_audio_for_diarization(
+        self,
+        audio_path: Path,
+        apply_noise_reduction: bool = False
+    ) -> tuple:
+        """
+        Preprocess audio for better speaker diarization quality.
+
+        Applies:
+        1. Conversion to mono 16kHz
+        2. Volume normalization
+        3. Optional noise reduction
+
+        Args:
+            audio_path: Path to the audio file.
+            apply_noise_reduction: Whether to apply noise reduction (slower but better quality).
+
+        Returns:
+            Tuple of (waveform_tensor, sample_rate)
+
+        Raises:
+            ImportError: If required libraries (torch, numpy, soundfile/librosa) are not available.
+        """
+        # Import required libraries (will raise ImportError if not available)
+        # This is intentional - caller should handle ImportError and fallback to direct file loading
+        import torch as torch_lib
+        import numpy as np
+
+        logger.debug("Preprocessing audio for speaker diarization...")
+
+        # Load audio
+        try:
+            import soundfile as sf
+            waveform_np, sample_rate = sf.read(str(audio_path), dtype='float32')
+        except ImportError:
+            import librosa
+            waveform_np, sample_rate = librosa.load(str(audio_path), sr=None, mono=False)
+
+        # Convert to mono if stereo
+        if len(waveform_np.shape) > 1:
+            logger.debug("Converting stereo to mono...")
+            waveform_np = waveform_np.mean(axis=1)
+
+        # Resample to 16kHz if needed
+        if sample_rate != 16000:
+            logger.debug("Resampling from %d Hz to 16000 Hz...", sample_rate)
+            from scipy import signal
+            num_samples = int(len(waveform_np) * 16000 / sample_rate)
+            waveform_np = signal.resample(waveform_np, num_samples)
+            sample_rate = 16000
+
+        # Normalize volume (RMS normalization to -20 dBFS)
+        # This prevents quiet sections from being classified as different speakers
+        logger.debug("Normalizing volume...")
+        rms = np.sqrt(np.mean(waveform_np**2))
+        if rms > 0:
+            target_rms = 0.1  # -20 dBFS roughly
+            waveform_np = waveform_np * (target_rms / rms)
+
+        # Clip to prevent distortion
+        waveform_np = np.clip(waveform_np, -1.0, 1.0)
+
+        # Optional: Apply noise reduction
+        if apply_noise_reduction:
+            try:
+                import importlib
+
+                nr = importlib.import_module("noisereduce")
+                logger.debug("Applying noise reduction...")
+                # Use stationary noise reduction (assumes consistent background noise)
+                waveform_np = nr.reduce_noise(
+                    y=waveform_np,
+                    sr=sample_rate,
+                    stationary=True,
+                    prop_decrease=0.8  # Reduce noise by 80%
+                )
+            except ImportError:
+                logger.warning(
+                    "noisereduce not installed. Skipping noise reduction. "
+                    "Install with: pip install noisereduce"
+                )
+            except Exception as e:
+                logger.warning("Noise reduction failed: %s. Continuing without it.", e)
+
+        # Convert to torch tensor with correct shape (channel, time)
+        # Ensure float32 dtype without creating extra copy if already float32
+        if waveform_np.dtype != np.float32:
+            waveform_np = waveform_np.astype(np.float32)
+
+        waveform = torch_lib.from_numpy(waveform_np).unsqueeze(0)
+
+        logger.debug("Audio preprocessing complete")
+        return waveform, sample_rate
 
     def _perform_speaker_diarization(
         self,
@@ -354,38 +628,16 @@ class Transcriber:
         logger.info("Performing speaker diarization...")
 
         try:
-            # Load audio with soundfile/librosa instead of relying on torchcodec
-            # This avoids FFmpeg library issues
+            # Preprocess audio for better diarization quality
+            # Includes: mono conversion, 16kHz resampling, volume normalization
+            diarization = None
+            preprocessing_failed = False
+
             try:
-                import torch as torch_lib
-                import numpy as np
-
-                # Try soundfile first (simpler, no lzma dependency)
-                try:
-                    import soundfile as sf
-                    logger.debug("Loading audio with soundfile...")
-                    waveform_np, sample_rate = sf.read(str(audio_path), dtype='float32')
-
-                    # Convert to mono if stereo
-                    if len(waveform_np.shape) > 1:
-                        waveform_np = waveform_np.mean(axis=1)
-
-                    # Resample to 16kHz if needed
-                    if sample_rate != 16000:
-                        # Simple resampling using scipy
-                        from scipy import signal
-                        num_samples = int(len(waveform_np) * 16000 / sample_rate)
-                        waveform_np = signal.resample(waveform_np, num_samples)
-                        sample_rate = 16000
-
-                except ImportError:
-                    # Fallback to librosa
-                    import librosa
-                    logger.debug("Loading audio with librosa...")
-                    waveform_np, sample_rate = librosa.load(str(audio_path), sr=16000, mono=True)
-
-                # Convert to torch tensor with correct shape (channel, time)
-                waveform = torch_lib.from_numpy(np.asarray(waveform_np, dtype=np.float32)).unsqueeze(0)
+                waveform, sample_rate = self._preprocess_audio_for_diarization(
+                    audio_path,
+                    apply_noise_reduction=False  # TODO: Make this configurable via CLI
+                )
 
                 # Create audio dict that pyannote expects
                 audio_dict = {
@@ -393,45 +645,75 @@ class Transcriber:
                     "sample_rate": sample_rate
                 }
 
-                logger.debug("Running diarization with preloaded audio...")
-                # Run diarization with preloaded audio
+                logger.debug("Running diarization with preprocessed audio...")
+                # Run diarization with preprocessed audio
                 diarization = diarization_pipeline(audio_dict)
 
             except ImportError as e:
-                logger.warning("Audio loading libraries not available (%s). Attempting direct file loading...", e)
-                # Fallback to direct file path (may fail if FFmpeg not available)
-                diarization = diarization_pipeline(str(audio_path))
+                logger.warning("Audio preprocessing libraries not available (%s). Using direct file loading...", e)
+                preprocessing_failed = True
             except Exception as e:
-                logger.warning("Failed to load audio (%s: %s). Attempting direct file loading...",
+                logger.warning("Failed to preprocess audio (%s: %s). Using direct file loading...",
                              type(e).__name__, str(e))
-                # Fallback to direct file path (may fail if FFmpeg not available)
-                diarization = diarization_pipeline(str(audio_path))
+                preprocessing_failed = True
+
+            # Fallback to direct file path if preprocessing failed
+            if preprocessing_failed:
+                logger.debug("Loading audio directly from file...")
+                # pyannote.audio pipeline can handle file paths directly
+                # This uses the pipeline's internal audio loading
+                diarization = diarization_pipeline(audio_path)
 
             # Build a mapping of time ranges to speakers
             # Format: list of (start, end, speaker_label)
-            # Note: diarization returns DiarizeOutput, need to access .speaker_diarization
+            # Note: In pyannote.audio 4.0+, diarization returns a DiarizeOutput object
+            # with speaker_diarization and exclusive_speaker_diarization attributes
             speaker_timeline = []
-            diarization_annotation = diarization.speaker_diarization
-            for turn, _, speaker in diarization_annotation.itertracks(yield_label=True):
+
+            # Use exclusive_speaker_diarization if available (4.0+), otherwise use speaker_diarization
+            # exclusive_speaker_diarization ensures only one speaker is active at any time,
+            # which simplifies reconciliation with transcription timestamps
+            if hasattr(diarization, 'exclusive_speaker_diarization'):
+                annotation = diarization.exclusive_speaker_diarization
+            elif hasattr(diarization, 'speaker_diarization'):
+                annotation = diarization.speaker_diarization
+            else:
+                # Fallback for older versions (3.x) that return Annotation directly
+                annotation = diarization
+
+            for turn, _, speaker in annotation.itertracks(yield_label=True):
                 speaker_timeline.append((turn.start, turn.end, speaker))
+
+            # Sort speaker timeline by start time for potential optimization
+            # (though pyannote usually returns sorted results)
+            speaker_timeline.sort(key=lambda x: x[0])
 
             logger.info("Found %d speaker turns", len(speaker_timeline))
 
             # Assign speakers to transcription segments
+            # Optimized approach: for each transcription segment,
+            # find overlapping speaker turns and select the one with maximum overlap
             updated_segments = []
             for seg in segments:
-                # Find which speaker(s) were active during this segment
-                # Use the speaker with the most overlap
-                seg_mid = (seg.start + seg.end) / 2
-
                 best_speaker = None
                 max_overlap = 0.0
 
+                # Binary search could be used here for large timelines,
+                # but for typical use cases (< 1000 speaker turns),
+                # linear search with early termination is sufficient
                 for spk_start, spk_end, spk_label in speaker_timeline:
+                    # Early termination: if speaker turn starts after segment ends
+                    if spk_start >= seg.end:
+                        break
+
+                    # Skip if speaker turn ends before segment starts
+                    if spk_end <= seg.start:
+                        continue
+
                     # Calculate overlap between segment and speaker turn
                     overlap_start = max(seg.start, spk_start)
                     overlap_end = min(seg.end, spk_end)
-                    overlap_duration = max(0.0, overlap_end - overlap_start)
+                    overlap_duration = overlap_end - overlap_start
 
                     if overlap_duration > max_overlap:
                         max_overlap = overlap_duration
@@ -456,6 +738,46 @@ class Transcriber:
             logger.error("Speaker diarization failed: %s", e)
             logger.warning("Continuing without speaker labels")
             return segments
+
+    def _build_pipeline_load_kwargs(
+        self,
+        pipeline_cls,
+        hf_token: Optional[str],
+        revision: Optional[str],
+    ) -> Dict[str, str]:
+        """
+        Build keyword arguments for Pipeline.from_pretrained across pyannote versions.
+        """
+        kwargs: Dict[str, str] = {}
+
+        try:
+            signature = inspect.signature(pipeline_cls.from_pretrained)
+            parameters = signature.parameters
+        except (TypeError, ValueError):
+            # Fallback if signature inspection fails; assume modern interface.
+            parameters = {}
+
+        if hf_token:
+            if "token" in parameters:
+                kwargs["token"] = hf_token
+            elif "use_auth_token" in parameters:
+                kwargs["use_auth_token"] = hf_token
+            else:
+                logger.warning(
+                    "pyannote.audio Pipeline.from_pretrained does not accept a HuggingFace "
+                    "token parameter. Make sure credentials are stored via `huggingface-cli login`."
+                )
+
+        if revision:
+            if not parameters or "revision" in parameters:
+                kwargs["revision"] = revision
+            else:
+                logger.debug(
+                    "pyannote.audio version does not support the 'revision' kwarg; "
+                    "default model revision will be used."
+                )
+
+        return kwargs
 
     def _validate_audio_path(self, audio_path: Path) -> None:
         """

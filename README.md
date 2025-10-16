@@ -11,6 +11,7 @@ A flexible toolkit for transcribing and translating YouTube videos, audio files,
   - Works with both local Whisper and OpenAI API
   - Optimal speaker detection using VAD integration
   - Enable with `--speakers` flag
+  - ⚠️ Note: May over-segment speakers (one person → multiple labels); manual review recommended for critical use
 - ✅ **Enhanced logging with colored output**
   - Color-coded log levels for better visibility
   - WARNING messages in orange for important notices
@@ -84,7 +85,7 @@ A flexible toolkit for transcribing and translating YouTube videos, audio files,
 
 ```bash
 git clone <repository-url>
-cd youtube-transcriber
+cd yt-transcriber
 ```
 
 ### 2. Create a virtual environment
@@ -291,7 +292,7 @@ python -m src.main --help
 ## 📁 Project structure
 
 ```
-youtube-transcriber/
+yt-transcriber/
 ├── src/                      # Source code
 │   ├── main.py              # Entry point
 │   ├── config.py            # Configuration
@@ -383,6 +384,11 @@ python -m src.main --url "..." --transcribe whisper_base
 - Use `whisper_base` instead of `whisper_small`
 - Confirm that GPU/MPS acceleration is active (see logs)
 - Close other resource-heavy applications
+
+**Safe to ignore:** Speaker diarization warnings
+- `UserWarning: torchcodec is not installed correctly` — Audio loading uses soundfile/librosa fallback (works correctly)
+- `UserWarning: std(): degrees of freedom is <= 0` — Internal pyannote calculation (does not affect results)
+- See [FAQ.md](FAQ.md) for detailed explanations
 
 ## 🧪 Testing
 

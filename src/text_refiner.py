@@ -253,7 +253,12 @@ class TextRefiner:
 Тематика (одно слово):"""
 
         try:
-            topic = self._call_ollama(prompt)
+            # Вызываем соответствующий бэкенд
+            if self.backend == RefineOptions.OLLAMA:
+                topic = self._call_ollama(prompt)
+            else:  # OpenAI API
+                system_prompt = "Ты помощник для определения тематики текста. Отвечай ТОЛЬКО одним словом."
+                topic = self._call_openai(prompt, system_prompt)
 
             # Очищаем ответ от thinking tags и берём только первое слово
             topic = topic.replace("<think>", "").replace("</think>", "")

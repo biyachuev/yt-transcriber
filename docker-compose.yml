@@ -3,7 +3,7 @@ version: '3.8'
 services:
   transcriber:
     build: .
-    container_name: youtube-transcriber
+    container_name: yt-transcriber
     volumes:
       # Монтируем директории для сохранения результатов и кеша
       - ./output:/app/output

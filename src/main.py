@@ -673,17 +673,31 @@ def process_youtube_video(
         whisper_prompt = custom_prompt
         logger.info("Using custom prompt supplied by user")
     else:
-        # Check if Ollama is available to build a prompt.
-        try:
-            import requests
-            ollama_available = requests.get("http://localhost:11434/api/tags", timeout=2).status_code == 200
-        except:
-            ollama_available = False
+        # Try to use LLM for prompt generation if available
+        llm_available = False
 
-        if ollama_available and refine_model:
+        if refine_model:
+            if refine_backend == "openai_api":
+                # OpenAI is always available if API key is set
+                from .config import settings
+                llm_available = bool(settings.OPENAI_API_KEY)
+            else:
+                # Check if Ollama is available
+                try:
+                    import requests
+                    llm_available = requests.get("http://localhost:11434/api/tags", timeout=2).status_code == 200
+                except:
+                    llm_available = False
+
+        if llm_available and refine_model:
             # Reuse the refinement model to build the prompt.
-            whisper_prompt = create_whisper_prompt_with_llm(metadata, use_ollama=True, model=refine_model)
-            logger.info("Prompt generated from metadata via LLM")
+            whisper_prompt = create_whisper_prompt_with_llm(
+                metadata,
+                use_ollama=(refine_backend != "openai_api"),
+                model=refine_model,
+                backend=refine_backend
+            )
+            logger.info("Prompt generated from metadata via LLM (%s)", refine_backend)
         else:
             whisper_prompt = create_whisper_prompt(metadata)
             logger.info("Prompt generated from metadata (standard method)")

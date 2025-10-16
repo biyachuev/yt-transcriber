@@ -1,4 +1,4 @@
-"""Custom exceptions for youtube-transcriber"""
+"""Custom exceptions for yt-transcriber"""
 
 
 class TranscriberError(Exception):

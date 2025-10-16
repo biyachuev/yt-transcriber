@@ -2,6 +2,41 @@
 
 All significant changes to this project are documented here.
 
+## [Unreleased]
+
+### Fixed
+- 🐛 **TextRefiner topic detection now respects backend setting**
+  - Fixed hardcoded Ollama call in `_detect_topic()` method
+  - Topic detection now correctly uses OpenAI API when `--refine-backend openai_api` is specified
+  - Resolves 404 error when using OpenAI backend without Ollama running
+
+### Added
+- ✨ **OpenAI support for Whisper prompt generation**
+  - Enhanced `create_whisper_prompt_with_llm()` to support both Ollama and OpenAI backends
+  - Automatically uses the same backend as refinement (`--refine-backend`) for prompt generation
+  - Improves consistency when using OpenAI API throughout the pipeline
+- 🎯 **Audio preprocessing for speaker diarization**
+  - Automatic conversion to mono 16kHz
+  - RMS volume normalization to -20 dBFS
+  - Clipping prevention
+  - Optional noise reduction support (via noisereduce library)
+  - Helps reduce false speaker clusters from volume variations and background noise
+  - New function: `_preprocess_audio_for_diarization()`
+
+### Documentation
+- 📝 **Added FAQ entries for speaker diarization warnings**
+  - Documented torchcodec FFmpeg version warning (safe to ignore)
+  - Documented pyannote std() warning (safe to ignore)
+  - Explained fallback audio loading mechanism
+  - Added quick reference in README troubleshooting section
+- 📝 **Added speaker diarization accuracy information**
+  - New FAQ section: "How accurate is speaker diarization?"
+  - Documented over-segmentation limitation (one speaker → multiple labels)
+  - Added accuracy guidelines based on audio quality
+  - Recommendation to verify speaker labels manually for critical applications
+  - Added warning note in README highlights
+  - Documented automatic audio preprocessing features
+
 ## [1.3.0] - 2025-10-10
 
 ### Added
