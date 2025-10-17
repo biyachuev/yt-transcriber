@@ -143,6 +143,35 @@ class TestTranscriber:
         assert "[00:00]" in result
         assert "[00:05]" in result
 
+    @patch('src.transcriber.torch')
+    @patch('src.transcriber.whisper')
+    def test_update_segments_from_text_preserves_speakers(self, mock_whisper, mock_torch):
+        """Refined text should retain dominant speaker labels for merged paragraphs."""
+        mock_torch.cuda.is_available.return_value = False
+        mock_torch.backends.mps.is_available.return_value = False
+
+        transcriber = Transcriber()
+
+        segments = [
+            TranscriptionSegment(0.0, 5.0, "First sentence.", speaker="SPEAKER_00"),
+            TranscriptionSegment(5.0, 10.0, "Second sentence.", speaker="SPEAKER_00"),
+            TranscriptionSegment(10.0, 15.0, "Third sentence.", speaker="SPEAKER_01"),
+            TranscriptionSegment(15.0, 20.0, "Fourth sentence.", speaker="SPEAKER_01"),
+        ]
+
+        refined_text = (
+            "Combined text for speaker zero.\n\n"
+            "Combined text for speaker one."
+        )
+
+        updated_segments = transcriber.update_segments_from_text(segments, refined_text)
+
+        assert len(updated_segments) == 2
+        assert updated_segments[0].speaker == "SPEAKER_00"
+        assert updated_segments[1].speaker == "SPEAKER_01"
+        assert updated_segments[0].start == pytest.approx(0.0)
+        assert updated_segments[1].end == pytest.approx(20.0)
+
 
 class TestChunking:
     """Tests for audio chunking logic."""

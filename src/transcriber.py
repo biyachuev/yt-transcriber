@@ -1518,6 +1518,52 @@ class Transcriber:
         if not segments:
             return []
 
+        def _select_speaker_for_interval(
+            original_segments: List[TranscriptionSegment],
+            interval_start: float,
+            interval_end: float,
+        ) -> Optional[str]:
+            """
+            Pick the speaker that overlaps most with the provided time range.
+
+            Args:
+                original_segments: Segments with existing speaker labels.
+                interval_start: Start of the interval.
+                interval_end: End of the interval.
+
+            Returns:
+                Speaker label or None if unavailable.
+            """
+            best_speaker = None
+            best_overlap = 0.0
+
+            for seg in original_segments:
+                if not seg.speaker:
+                    continue
+
+                overlap_start = max(interval_start, seg.start)
+                overlap_end = min(interval_end, seg.end)
+                overlap = overlap_end - overlap_start
+
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_speaker = seg.speaker
+
+            if best_speaker:
+                return best_speaker
+
+            # Fallback: use the closest preceding speaker label.
+            for seg in reversed(original_segments):
+                if seg.start <= interval_start and seg.speaker:
+                    return seg.speaker
+
+            # Final fallback: return the first available speaker label.
+            for seg in original_segments:
+                if seg.speaker:
+                    return seg.speaker
+
+            return None
+
         total_duration = segments[-1].end - segments[0].start
         segment_duration = total_duration / len(paragraphs) if paragraphs else 0
 
@@ -1536,7 +1582,7 @@ class Transcriber:
                     start=start_time,
                     end=end_time,
                     text=paragraph,
-                    speaker=None,
+                    speaker=_select_speaker_for_interval(segments, start_time, end_time),
                 )
             )
             start_time = end_time
