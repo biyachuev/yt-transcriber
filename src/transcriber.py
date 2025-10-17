@@ -4,6 +4,7 @@ Module responsible for audio transcription via Whisper.
 import atexit
 import inspect
 import re
+import warnings
 from functools import wraps
 from pathlib import Path
 from typing import List, Dict, Optional, Set
@@ -15,6 +16,29 @@ from tqdm import tqdm
 from src.config import settings, TranscribeOptions
 from src.logger import logger
 from src.utils import format_timestamp, estimate_processing_time, format_log_preview
+
+# Suppress deprecation warnings from third-party libraries
+# These are coming from pyannote.audio and speechbrain internals that we don't control
+warnings.filterwarnings(
+    "ignore",
+    message=".*torchaudio._backend.list_audio_backends has been deprecated.*",
+    category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=".*torchaudio.load.*will be changed to use.*torchcodec.*",
+    category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=".*Lightning automatically upgraded your loaded checkpoint.*",
+    category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=".*Model was trained with.*yours is.*Bad things might happen.*",
+    category=UserWarning,
+)
 
 # Global registry for cleanup of temporary chunk files
 _temp_chunk_files: Set[Path] = set()
@@ -345,7 +369,13 @@ class Transcriber:
                 "Loading pyannote VAD pipeline (revision: %s)...",
                 load_kwargs.get("revision", "default")
             )
+            logger.debug(
+                "Note: Version compatibility warnings from pyannote.audio and PyTorch are expected and can be safely ignored"
+            )
+
             try:
+                # Note: pyannote.audio may print version warnings to stderr during model loading.
+                # These are harmless compatibility warnings from the upstream library.
                 self._vad_pipeline = Pipeline.from_pretrained(
                     "pyannote/voice-activity-detection",
                     **load_kwargs
@@ -460,7 +490,12 @@ class Transcriber:
                 "Loading pyannote speaker diarization pipeline (revision: %s)...",
                 load_kwargs.get("revision") or diarization_revision or "default"
             )
+            logger.debug(
+                "Note: Version compatibility warnings from pyannote.audio are expected and can be safely ignored"
+            )
             try:
+                # Note: pyannote.audio may print version warnings to stderr during model loading.
+                # These are harmless compatibility warnings from the upstream library.
                 self._diarization_pipeline = Pipeline.from_pretrained(
                     "pyannote/speaker-diarization-3.1",
                     **load_kwargs

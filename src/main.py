@@ -3,8 +3,16 @@ Main application module.
 """
 import argparse
 import sys
+import warnings
 from pathlib import Path
 from typing import Optional
+
+# Suppress third-party library deprecation warnings early
+# Must be set before importing modules that trigger warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
+warnings.filterwarnings("ignore", category=UserWarning, module="speechbrain")
+warnings.filterwarnings("ignore", category=UserWarning, module="torchaudio")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from .config import settings, TranscribeOptions, TranslateOptions, RefineOptions, SummarizeOptions
 from .logger import logger
