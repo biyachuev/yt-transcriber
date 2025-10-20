@@ -248,11 +248,12 @@ class Translator:
 IMPORTANT RULES:
 1. Preserve all timestamps in format [MM:SS] or [HH:MM:SS]
 2. Preserve all speaker labels like [Speaker 1], [Speaker 2]
-3. Maintain paragraph structure and formatting
-4. Translate accurately while keeping the tone and style
-5. Keep technical terms accurate
-6. Do NOT add explanations or comments
-7. Return ONLY the translated text"""
+3. CRITICAL: Preserve ALL segment markers of the form <<<SEG_X>>> EXACTLY as they appear. Do NOT translate, move, or remove these markers. They must remain in the exact same position.
+4. Maintain paragraph structure and formatting
+5. Translate accurately while keeping the tone and style
+6. Keep technical terms accurate
+7. Do NOT add explanations or comments
+8. Return ONLY the translated text"""
 
         for chunk in tqdm(chunks, desc="Translating chunks"):
             translated_text = self._translate_chunk_with_retry(
@@ -282,6 +283,8 @@ IMPORTANT RULES:
         Returns:
             Translated text
         """
+        from openai import APIConnectionError, RateLimitError, APITimeoutError, BadRequestError
+
         try:
             # Apply rate limiting
             if self.rate_limiter:
@@ -307,10 +310,15 @@ IMPORTANT RULES:
 
             return response.choices[0].message.content.strip()
 
-        except Exception as e:
-            logger.error(f"Error translating chunk: {e}")
-            # Fall back to original text on final error
-            return chunk
+        except BadRequestError as e:
+            # Terminal error (invalid request) - don't retry
+            logger.error(f"Invalid translation request: {e}")
+            raise ValueError(f"Translation failed due to invalid request: {e}")
+
+        except (APIConnectionError, RateLimitError, APITimeoutError) as e:
+            # Retryable errors - let the decorator handle retry logic
+            logger.warning(f"Retryable error during translation: {type(e).__name__}: {e}")
+            raise  # Re-raise to allow @retry_api_call decorator to retry
 
     def translate_segments(
         self,

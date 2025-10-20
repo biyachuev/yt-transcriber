@@ -310,16 +310,41 @@ REQUIREMENTS:
             text: Text to summarize
             language: Target language for summary ('ru' or 'en')
             custom_prompt: Custom instructions for summarization (optional)
-            max_chunk_tokens: Maximum tokens per chunk
+            max_chunk_tokens: Maximum tokens per chunk (words for estimation)
 
         Returns:
             Combined summary
         """
         logger.info("Summarizing long text...")
 
+        # Adjust chunk size based on model context window
+        # For OpenAI backend, check model context limits
+        if self.backend == SummarizeOptions.OPENAI_API:
+            # GPT-4 (8k context): ~4000 input tokens + 4000 output = safe limit ~3000 words
+            # GPT-4-turbo/GPT-4o (128k): can handle larger chunks
+            if "gpt-4-turbo" in self.model_name.lower() or "gpt-4o" in self.model_name.lower():
+                # Large context models - can use larger chunks
+                safe_chunk_size = min(max_chunk_tokens, 20000)
+            elif "gpt-3.5" in self.model_name.lower():
+                # GPT-3.5-turbo (16k context) - moderate chunks
+                safe_chunk_size = min(max_chunk_tokens, 6000)
+            else:
+                # Standard GPT-4 (8k context) - conservative chunks
+                # ~1 word ≈ 1.3 tokens, so 3000 words ≈ 4000 tokens input + 4000 output
+                safe_chunk_size = min(max_chunk_tokens, 3000)
+                if max_chunk_tokens > 3000:
+                    logger.warning(
+                        "Reducing chunk size from %d to %d words for GPT-4 8k context window. "
+                        "Consider using gpt-4-turbo or gpt-4o for larger chunks.",
+                        max_chunk_tokens, safe_chunk_size
+                    )
+        else:
+            # Ollama - use configured chunk size
+            safe_chunk_size = max_chunk_tokens
+
         # Split into chunks
-        chunks = chunk_text(text, max_tokens=max_chunk_tokens)
-        logger.info(f"Split text into {len(chunks)} chunks")
+        chunks = chunk_text(text, max_tokens=safe_chunk_size)
+        logger.info(f"Split text into {len(chunks)} chunks (max {safe_chunk_size} words per chunk)")
 
         # Summarize each chunk
         chunk_summaries = []

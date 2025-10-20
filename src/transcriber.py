@@ -298,6 +298,11 @@ class Transcriber:
             if with_speakers:
                 segments = self._perform_speaker_diarization(audio_path, segments)
 
+            # Cache the result for OpenAI API transcriptions
+            if self.use_cache:
+                segments_dict = [seg.to_dict() for seg in segments]
+                self.cache.set("transcription", cache_key, segments_dict)
+
             return segments
 
         self._load_model()
@@ -1292,7 +1297,37 @@ class Transcriber:
         Returns:
             List of TranscriptionSegment instances.
         """
+        from .api_cache import get_openai_rate_limiter
+        from .retry_handler import retry_api_call
+        from .cost_tracker import get_cost_tracker
+
+        # Check cache first using audio hash
+        if self.use_cache:
+            audio_hash = _compute_audio_hash(audio_path)
+            cache_key = {
+                "audio_hash": audio_hash,
+                "method": "whisper_openai_api",
+                "language": language,
+                "initial_prompt": initial_prompt or ""
+            }
+            cached_result = self.cache.get("transcription", cache_key)
+            if cached_result is not None:
+                logger.info("Using cached OpenAI Whisper transcription result")
+                segments = [
+                    TranscriptionSegment(
+                        start=seg["start"],
+                        end=seg["end"],
+                        text=seg["text"],
+                        speaker=seg.get("speaker")
+                    )
+                    for seg in cached_result
+                ]
+                return segments
+
         logger.info("Uploading audio to OpenAI...")
+
+        # Get rate limiter for OpenAI API
+        rate_limiter = get_openai_rate_limiter()
 
         # Prepare API parameters
         api_params = {
@@ -1309,8 +1344,39 @@ class Transcriber:
             api_params["prompt"] = initial_prompt
 
         try:
-            # Call OpenAI API
-            response = client.audio.transcriptions.create(**api_params)
+            # Apply rate limiting
+            if rate_limiter:
+                rate_limiter.wait_if_needed()
+
+            # Wrap the API call with retry logic
+            @retry_api_call(max_retries=3)
+            def _call_whisper_api():
+                return client.audio.transcriptions.create(**api_params)
+
+            # Call OpenAI API with retry
+            response = _call_whisper_api()
+
+            # Track transcription cost (Whisper charges by duration, not tokens)
+            # Get audio duration for cost tracking
+            try:
+                import subprocess
+                result = subprocess.run(
+                    [
+                        "ffprobe",
+                        "-v", "error",
+                        "-show_entries", "format=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1",
+                        str(audio_path),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                duration_seconds = float(result.stdout.strip())
+                cost_tracker = get_cost_tracker()
+                cost_tracker.add_transcription(duration_seconds)
+            except Exception as e:
+                logger.debug("Could not track transcription cost: %s", e)
 
             # Extract segments from response
             segments: List[TranscriptionSegment] = []
@@ -1343,6 +1409,11 @@ class Transcriber:
             logger.info("Cleaning up potential hallucinations...")
             segments = self._clean_hallucinations(segments, expected_language=detected_language)
             logger.info("After cleanup: %d segments remain", len(segments))
+
+            # Cache the result
+            if self.use_cache:
+                segments_dict = [seg.to_dict() for seg in segments]
+                self.cache.set("transcription", cache_key, segments_dict)
 
             return segments
 

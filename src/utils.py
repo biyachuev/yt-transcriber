@@ -192,9 +192,31 @@ def create_whisper_prompt_with_llm(
         Generated Whisper prompt.
     """
     from .logger import logger
+    from .api_cache import get_cache, get_openai_rate_limiter
+    from .retry_handler import retry_api_call
 
     if not use_ollama and backend == "ollama":
         return create_whisper_prompt(metadata)
+
+    # Check cache first for OpenAI backend
+    cache = get_cache()
+    if backend == "openai_api" and cache:
+        cache_key = {
+            "metadata": {
+                "title": metadata.get("title", ""),
+                "description": metadata.get("description", "")[:500],
+                "tags": metadata.get("tags", [])[:20],
+                "channel": metadata.get("channel", ""),
+                "subtitles_sample": metadata.get("subtitles_sample", "")[:1000]
+            },
+            "model": model,
+            "backend": backend,
+            "method": "prompt_generation"
+        }
+        cached_result = cache.get("prompt_generation", cache_key)
+        if cached_result is not None:
+            logger.info("Using cached LLM-generated prompt")
+            return cached_result
 
     context_parts = []
 
@@ -246,21 +268,32 @@ def create_whisper_prompt_with_llm(
     try:
         # Call the appropriate backend
         if backend == "openai_api":
-            # Use OpenAI API
+            # Use OpenAI API with retry and rate limiting
             from openai import OpenAI
             from .config import settings
 
-            client = OpenAI(api_key=settings.OPENAI_API_KEY)
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "Ты — ассистент для генерации промптов для Whisper. Отвечай кратко, только текст промпта."},
-                    {"role": "user", "content": llm_prompt}
-                ],
-                temperature=0.3,
-                max_tokens=400,
-            )
-            prompt = response.choices[0].message.content.strip()
+            rate_limiter = get_openai_rate_limiter()
+
+            # Wrap the API call with retry logic
+            @retry_api_call(max_retries=3)
+            def _call_openai_for_prompt():
+                # Apply rate limiting
+                if rate_limiter:
+                    rate_limiter.wait_if_needed()
+
+                client = OpenAI(api_key=settings.OPENAI_API_KEY)
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "Ты — ассистент для генерации промптов для Whisper. Отвечай кратко, только текст промпта."},
+                        {"role": "user", "content": llm_prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=400,
+                )
+                return response.choices[0].message.content.strip()
+
+            prompt = _call_openai_for_prompt()
         else:
             # Use Ollama API
             response = requests.post(
@@ -321,6 +354,10 @@ def create_whisper_prompt_with_llm(
 
         logger.info("LLM-generated Whisper prompt (%d chars) using %s", len(prompt), backend)
         logger.debug("Prompt preview: %s", format_log_preview(prompt))
+
+        # Cache the result for OpenAI backend
+        if backend == "openai_api" and cache:
+            cache.set("prompt_generation", cache_key, prompt)
 
         return prompt
 

@@ -34,7 +34,7 @@ class CostTracker:
     Track OpenAI API costs across different operations.
 
     Operations tracked:
-    - transcription: Whisper API calls
+    - transcription: Whisper API calls (tracked by duration, not tokens)
     - translation: GPT-4 translation calls
     - refinement: GPT-4 text refinement calls
     - summarization: GPT-4 summarization calls
@@ -44,6 +44,9 @@ class CostTracker:
     translation: UsageStats = field(default_factory=UsageStats)
     refinement: UsageStats = field(default_factory=UsageStats)
     summarization: UsageStats = field(default_factory=UsageStats)
+
+    # Whisper-specific tracking (duration-based pricing)
+    transcription_duration_seconds: float = 0.0
 
     def add_transcription(self, audio_duration_seconds: float):
         """
@@ -55,9 +58,20 @@ class CostTracker:
         Args:
             audio_duration_seconds: Duration of audio in seconds
         """
-        # Whisper doesn't use tokens, it charges by duration
-        # We'll track it separately in the summary
-        pass
+        self.transcription_duration_seconds += audio_duration_seconds
+
+    @property
+    def transcription_cost(self) -> float:
+        """
+        Calculate Whisper transcription cost.
+
+        Whisper API pricing: $0.006 per minute
+
+        Returns:
+            Cost in USD
+        """
+        duration_minutes = self.transcription_duration_seconds / 60.0
+        return duration_minutes * 0.006
 
     def add_translation(self, prompt_tokens: int, completion_tokens: int):
         """
@@ -99,6 +113,7 @@ class CostTracker:
     def total_cost(self) -> float:
         """Calculate total cost across all operations."""
         return (
+            self.transcription_cost +
             self.translation.cost_usd +
             self.refinement.cost_usd +
             self.summarization.cost_usd
@@ -115,13 +130,19 @@ class CostTracker:
 
     def print_summary(self):
         """Print a formatted cost summary."""
-        if self.total_tokens == 0:
+        if self.total_tokens == 0 and self.transcription_duration_seconds == 0:
             logger.info("\nNo OpenAI API calls were made")
             return
 
         logger.info("\n" + "=" * 60)
         logger.info("OpenAI API Cost Summary")
         logger.info("=" * 60)
+
+        if self.transcription_duration_seconds > 0:
+            duration_minutes = self.transcription_duration_seconds / 60.0
+            logger.info("\nTranscription (Whisper API):")
+            logger.info(f"  Duration:      {duration_minutes:.2f} minutes ({self.transcription_duration_seconds:.1f} seconds)")
+            logger.info(f"  Cost:          ${self.transcription_cost:.4f} (at $0.006/min)")
 
         if self.translation.total_tokens > 0:
             logger.info("\nTranslation:")
