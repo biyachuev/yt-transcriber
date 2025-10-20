@@ -39,6 +39,7 @@ env/
 output/
 temp/
 logs/
+cache/
 models/
 *.mp3
 *.mp4

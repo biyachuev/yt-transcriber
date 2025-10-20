@@ -37,7 +37,7 @@ class ColoredFormatter(logging.Formatter):
         return formatted
 
 
-def setup_logger(name: str = "youtube_transcriber") -> logging.Logger:
+def setup_logger(name: str = "yt") -> logging.Logger:
     """
     Configure a logger that writes both to stdout and to a log file.
 

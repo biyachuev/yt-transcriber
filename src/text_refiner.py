@@ -8,6 +8,9 @@ from tqdm import tqdm
 
 from .logger import logger
 from .config import RefineOptions, settings
+from .api_cache import get_cache, get_openai_rate_limiter
+from .retry_handler import retry_api_call
+from .cost_tracker import get_cost_tracker
 
 
 class TextRefiner:
@@ -17,7 +20,8 @@ class TextRefiner:
         self,
         backend: str = RefineOptions.OLLAMA,
         model_name: str = "qwen2.5:3b",
-        ollama_url: str = "http://localhost:11434"
+        ollama_url: str = "http://localhost:11434",
+        use_cache: bool = True
     ):
         """
         Инициализация
@@ -26,11 +30,15 @@ class TextRefiner:
             backend: Backend для улучшения (ollama или openai_api)
             model_name: Название модели (для Ollama или OpenAI, например gpt-4, gpt-3.5-turbo)
             ollama_url: URL сервера Ollama (только для Ollama backend)
+            use_cache: Использовать кеширование (по умолчанию True)
         """
         self.backend = backend
         self.model_name = model_name
         self.ollama_url = ollama_url
         self.api_endpoint = f"{ollama_url}/api/generate"
+        self.use_cache = use_cache
+        self.cache = get_cache() if use_cache else None
+        self.rate_limiter = get_openai_rate_limiter() if backend == RefineOptions.OPENAI_API else None
 
         # Проверяем доступность бэкенда
         if self.backend == RefineOptions.OLLAMA:
@@ -39,6 +47,9 @@ class TextRefiner:
             self._check_openai_available()
         else:
             raise ValueError(f"Unsupported refinement backend: {self.backend}")
+
+        if use_cache:
+            logger.info("Text refinement caching enabled")
 
     def _check_ollama_available(self):
         """Проверка доступности Ollama сервера"""
@@ -200,9 +211,10 @@ class TextRefiner:
             logger.error(f"Ошибка при вызове Ollama: {e}")
             raise
 
+    @retry_api_call(max_retries=5)
     def _call_openai(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """
-        Вызов OpenAI API
+        Вызов OpenAI API с кешированием и rate limiting
 
         Args:
             prompt: Промпт для модели
@@ -211,6 +223,19 @@ class TextRefiner:
         Returns:
             Ответ модели
         """
+        # Check cache first
+        if self.use_cache:
+            cache_key = {
+                "prompt": prompt,
+                "system_prompt": system_prompt,
+                "model": self.model_name,
+                "method": "openai_refine"
+            }
+            cached_result = self.cache.get("refinement", cache_key)
+            if cached_result is not None:
+                logger.debug("Using cached refinement result")
+                return cached_result
+
         try:
             from openai import OpenAI
 
@@ -221,6 +246,10 @@ class TextRefiner:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
+            # Apply rate limiting
+            if self.rate_limiter:
+                self.rate_limiter.wait_if_needed()
+
             response = client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
@@ -228,7 +257,21 @@ class TextRefiner:
                 max_tokens=4000,
             )
 
-            return response.choices[0].message.content.strip()
+            result = response.choices[0].message.content.strip()
+
+            # Track token usage
+            if response.usage:
+                cost_tracker = get_cost_tracker()
+                cost_tracker.add_refinement(
+                    response.usage.prompt_tokens,
+                    response.usage.completion_tokens
+                )
+
+            # Cache the result
+            if self.use_cache:
+                self.cache.set("refinement", cache_key, result)
+
+            return result
 
         except Exception as e:
             logger.error(f"Ошибка при вызове OpenAI API: {e}")

@@ -8,6 +8,9 @@ from tqdm import tqdm
 from .logger import logger
 from .config import SummarizeOptions, settings
 from .utils import chunk_text
+from .api_cache import get_cache, get_openai_rate_limiter
+from .retry_handler import retry_api_call
+from .cost_tracker import get_cost_tracker
 
 
 class Summarizer:
@@ -17,7 +20,8 @@ class Summarizer:
         self,
         backend: str = SummarizeOptions.OLLAMA,
         model_name: str = "qwen2.5:3b",
-        ollama_url: str = "http://localhost:11434"
+        ollama_url: str = "http://localhost:11434",
+        use_cache: bool = True
     ):
         """
         Initialize the summarizer.
@@ -26,11 +30,15 @@ class Summarizer:
             backend: Backend to use (ollama or openai_api)
             model_name: Model name (for Ollama: qwen2.5:3b, for OpenAI: gpt-4, gpt-3.5-turbo)
             ollama_url: Ollama server URL (only for Ollama backend)
+            use_cache: Enable caching (default True)
         """
         self.backend = backend
         self.model_name = model_name
         self.ollama_url = ollama_url
         self.api_endpoint = f"{ollama_url}/api/generate"
+        self.use_cache = use_cache
+        self.cache = get_cache() if use_cache else None
+        self.rate_limiter = get_openai_rate_limiter() if backend == SummarizeOptions.OPENAI_API else None
 
         # Check backend availability
         if self.backend == SummarizeOptions.OLLAMA:
@@ -39,6 +47,9 @@ class Summarizer:
             self._check_openai_available()
         else:
             raise ValueError(f"Unsupported summarization backend: {self.backend}")
+
+        if use_cache:
+            logger.info("Summarization caching enabled")
 
     def _check_ollama_available(self):
         """Check if Ollama server is available."""
@@ -156,9 +167,10 @@ class Summarizer:
             logger.error(f"Error calling Ollama: {e}")
             raise
 
+    @retry_api_call(max_retries=5)
     def _call_openai(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """
-        Call OpenAI API.
+        Call OpenAI API with caching and rate limiting.
 
         Args:
             prompt: Prompt for the model
@@ -167,6 +179,19 @@ class Summarizer:
         Returns:
             Model response
         """
+        # Check cache first
+        if self.use_cache:
+            cache_key = {
+                "prompt": prompt,
+                "system_prompt": system_prompt,
+                "model": self.model_name,
+                "method": "openai_summarize"
+            }
+            cached_result = self.cache.get("summarization", cache_key)
+            if cached_result is not None:
+                logger.debug("Using cached summarization result")
+                return cached_result
+
         try:
             from openai import OpenAI
 
@@ -177,6 +202,10 @@ class Summarizer:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
+            # Apply rate limiting
+            if self.rate_limiter:
+                self.rate_limiter.wait_if_needed()
+
             response = client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
@@ -184,7 +213,21 @@ class Summarizer:
                 max_tokens=4000,
             )
 
-            return response.choices[0].message.content.strip()
+            result = response.choices[0].message.content.strip()
+
+            # Track token usage
+            if response.usage:
+                cost_tracker = get_cost_tracker()
+                cost_tracker.add_summarization(
+                    response.usage.prompt_tokens,
+                    response.usage.completion_tokens
+                )
+
+            # Cache the result
+            if self.use_cache:
+                self.cache.set("summarization", cache_key, result)
+
+            return result
 
         except Exception as e:
             logger.error(f"Error calling OpenAI API: {e}")

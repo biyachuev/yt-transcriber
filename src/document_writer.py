@@ -80,6 +80,11 @@ class DocumentWriter:
                         para = doc.add_paragraph(para_text.strip())
                         para.style = "Normal"
 
+                        # Apply justify alignment for translation and transcription sections
+                        section_title = section.get("title", "")
+                        if section_title in ["Перевод", "Транскрипция", "Summary"]:
+                            para.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+
             doc.add_paragraph()
 
         doc.save(str(path))
@@ -113,6 +118,7 @@ class DocumentWriter:
         translate_method: str = "",
         with_timestamps: bool = True,
         with_speakers: bool = False,
+        description: str = "",
     ) -> tuple[Path, Path]:
         """
         Build documents directly from transcription/translation segments.
@@ -125,6 +131,7 @@ class DocumentWriter:
             translate_method: Translation backend label.
             with_timestamps: Whether to include timestamps.
             with_speakers: Whether to include speaker labels.
+            description: Document content description (optional).
 
         Returns:
             Tuple with DOCX and Markdown paths.
@@ -133,6 +140,25 @@ class DocumentWriter:
 
         transcriber = Transcriber()
         sections: List[dict] = []
+
+        # Add metadata section if description is provided
+        if description or transcribe_method or translate_method:
+            metadata_lines = []
+
+            if description:
+                metadata_lines.append(f"**Содержимое:** {description}")
+
+            if transcribe_method:
+                metadata_lines.append(f"**Метод транскрипции:** {transcribe_method}")
+
+            if translation_segments and translate_method:
+                metadata_lines.append(f"**Метод перевода:** {translate_method}")
+
+            sections.append({
+                "title": "Информация о документе",
+                "method": "",
+                "content": "\n\n".join(metadata_lines)
+            })
 
         if translation_segments:
             if with_timestamps:
@@ -145,8 +171,8 @@ class DocumentWriter:
 
             sections.append(
                 {
-                    "title": f"Document translation (method: {translate_method})",
-                    "method": translate_method,
+                    "title": "Перевод",
+                    "method": "",
                     "content": translation_text,
                 }
             )
@@ -165,12 +191,8 @@ class DocumentWriter:
 
         sections.append(
             {
-                "title": "Transcript",
-                "method": (
-                    f"Transcription method: {transcribe_method}"
-                    if transcribe_method
-                    else ""
-                ),
+                "title": "Транскрипция",
+                "method": "",
                 "content": transcription_text,
             }
         )

@@ -12,7 +12,9 @@ from typing import Optional
 warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
 warnings.filterwarnings("ignore", category=UserWarning, module="speechbrain")
 warnings.filterwarnings("ignore", category=UserWarning, module="torchaudio")
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pyannote")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="speechbrain")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="torchaudio")
 
 from .config import settings, TranscribeOptions, TranslateOptions, RefineOptions, SummarizeOptions
 from .logger import logger
@@ -28,6 +30,26 @@ from .utils import (
 )
 from .text_reader import TextReader
 from .video_processor import VideoProcessor
+from .cost_tracker import get_cost_tracker
+from .api_cache import get_cache
+
+
+def _print_session_summary():
+    """Print cost tracking and cache statistics summary."""
+    # Print cost tracking summary
+    tracker = get_cost_tracker()
+    tracker.print_summary()
+
+    # Print cache statistics
+    cache = get_cache()
+    stats = cache.get_stats()
+    logger.info("\n" + "=" * 60)
+    logger.info("Cache Statistics")
+    logger.info("=" * 60)
+    logger.info(f"Total entries:    {stats['total_entries']}/{stats['max_entries']} ({stats['usage_percentage']}%)")
+    logger.info(f"Cache size:       {stats['total_size_mb']} MB")
+    logger.info(f"TTL:              {stats['ttl_days']} days")
+    logger.info("=" * 60)
 
 
 def load_prompt_from_file(prompt_file_path: str) -> str:
@@ -93,6 +115,9 @@ Examples:
     # Refine and translate (creates original, refined, translated documents)
     python -m src.main --input_audio audio.mp3 --transcribe whisper_medium --translate NLLB --refine-model llama3.2:3b
 
+    # Transcribe, translate, refine translation, and summarize
+    python -m src.main --url "https://youtube.com/watch?v=..." --transcribe whisper_medium --translate NLLB --refine-translation qwen2.5:7b --summarize --summarize-model qwen2.5:7b
+
 Options:
     --url URL                   YouTube video URL
     --input_audio PATH          Path to an audio file (mp3, wav, etc.)
@@ -107,12 +132,20 @@ Options:
                                 For YouTube: generated automatically if omitted
                                 For audio files: recommended to supply manually
 
-    --refine-model MODEL        Ollama model used to refine the transcript
-                                (e.g. qwen2.5:3b, llama3:8b). Requires a running Ollama server.
+    --refine-model MODEL        Model used to refine the transcript
+                                (e.g. qwen2.5:3b for Ollama, gpt-4 for OpenAI)
 
-    --refine-translation MODEL  Ollama model used to polish translation output
+    --refine-backend BACKEND    Backend for refinement: ollama (default) or openai_api
+
+    --refine-translation MODEL  Model used to polish translation output
                                 (e.g. qwen2.5:3b, llama3:8b). Produces more natural phrasing.
-                                Requires a running Ollama server.
+
+    --summarize                 Generate a summary of the content
+
+    --summarize-model MODEL     Model for summarization
+                                (e.g. qwen2.5:7b for Ollama, gpt-4 for OpenAI)
+
+    --summarize-backend BACKEND Backend for summarization: ollama (default) or openai_api
 
     --speakers                  Enable speaker diarisation (experimental)
 
@@ -155,8 +188,9 @@ Refinement with LLM (--refine-model):
 
     Output files:
     - Without --refine-model: name.docx, name.md
-    - With --refine-model: name (original).docx/md, name (refined).docx/md
-    - With --refine-model and --translate: name (translated).docx/md
+    - With --refine-model: name_original.docx/md, name_refined.docx/md
+    - With --refine-model and --translate: name_translated.docx/md
+    - With --refine-translation: name_translated_refined.docx/md
 
     Requirements:
     1. Install Ollama: https://ollama.ai
@@ -179,16 +213,16 @@ Notes:
 
 def _generate_summary(
     title: str,
-    segments: list[dict],
+    segments: list,
     summarize_model: str,
     summarize_backend: str
 ) -> None:
     """
-    Generate and save a summary of the text.
+    Generate and save a summary of the text in both MD and DOCX formats.
 
     Args:
         title: Base title for the output file.
-        segments: List of text segments to summarize.
+        segments: List of text segments to summarize (TranscriptionSegment objects or dicts).
         summarize_model: Model to use for summarization.
         summarize_backend: Backend to use (ollama or openai_api).
     """
@@ -201,7 +235,11 @@ def _generate_summary(
         summarizer = Summarizer(backend=summarize_backend, model_name=summarize_model)
 
         # Combine text from segments
-        text_to_summarize = '\n\n'.join([seg['text'] for seg in segments])
+        # Handle both TranscriptionSegment objects and dict segments
+        text_to_summarize = '\n\n'.join([
+            seg.text if hasattr(seg, 'text') else seg['text']
+            for seg in segments
+        ])
 
         # Detect language for summary
         detected_lang = detect_language(text_to_summarize)
@@ -209,13 +247,29 @@ def _generate_summary(
 
         summary = summarizer.summarize_long_text(text_to_summarize, language=summary_lang)
 
-        # Save summary as a separate document
-        summary_path = settings.OUTPUT_DIR / f"{title}_summary.md"
-        with open(summary_path, 'w', encoding='utf-8') as f:
-            f.write(f"# Summary: {title}\n\n")
-            f.write(summary)
+        # Save summary as both MD and DOCX
+        from .document_writer import DocumentWriter
 
-        logger.info("Summary saved: %s", summary_path)
+        writer = DocumentWriter()
+        summary_title = f"{title}_summary"
+
+        # Create sections for document writer
+        sections = [
+            {
+                "title": "Summary",
+                "method": f"Generated by {summarize_model} ({summarize_backend})",
+                "content": summary
+            }
+        ]
+
+        docx_path, md_path = writer.create_documents(
+            title=summary_title,
+            sections=sections
+        )
+
+        logger.info("Summary saved:")
+        logger.info("  - %s", docx_path)
+        logger.info("  - %s", md_path)
     except Exception as e:
         logger.error("Failed to generate summary: %s", e)
 
@@ -385,7 +439,8 @@ def process_text_file(
             transcribe_method=f"Refined with {refine_model}",
             translate_method="",
             with_timestamps=False,
-            with_speakers=False
+            with_speakers=False,
+            description="Улучшенный текст"
         )
         logger.info("  Saved refined markdown: %s", md_path_refined)
 
@@ -394,6 +449,7 @@ def process_text_file(
         for method, translated_segs in translated_segments_dict.items():
             logger.info("  Creating translated document (%s)...", method)
 
+            trans_desc = "Улучшенный текст + перевод" if refined_segments else "Оригинальный текст + перевод"
             docx_path_trans, md_path_trans = writer.create_from_segments(
                 title=f"{text_title}_translated_{method}",
                 transcription_segments=refined_segments if refined_segments else original_segments,
@@ -401,7 +457,8 @@ def process_text_file(
                 transcribe_method=f"Loaded from {text_path_obj.suffix}" + (f" + {refine_model}" if refine_model else ""),
                 translate_method=method,
                 with_timestamps=False,
-                with_speakers=False
+                with_speakers=False,
+                description=trans_desc
             )
             logger.info("  Saved translation markdown: %s", md_path_trans)
 
@@ -410,6 +467,7 @@ def process_text_file(
         for method, refined_translated_segs in refined_translation_segments_dict.items():
             logger.info("  Creating refined translation document (%s)...", method)
 
+            trans_refined_desc = "Улучшенный текст + улучшенный перевод (дополнительно отполированный через LLM)" if refined_segments else "Оригинальный текст + улучшенный перевод (дополнительно отполированный через LLM)"
             docx_path_trans_refined, md_path_trans_refined = writer.create_from_segments(
                 title=f"{text_title}_translated_{method}_refined",
                 transcription_segments=refined_segments if refined_segments else original_segments,
@@ -417,7 +475,8 @@ def process_text_file(
                 transcribe_method=f"Loaded from {text_path_obj.suffix}" + (f" + {refine_model}" if refine_model else ""),
                 translate_method=f"{method} + {refine_translation_model}",
                 with_timestamps=False,
-                with_speakers=False
+                with_speakers=False,
+                description=trans_refined_desc
             )
             logger.info("  Saved refined translation markdown: %s", md_path_trans_refined)
 
@@ -438,6 +497,9 @@ def process_text_file(
     logger.info("\n" + "=" * 60)
     logger.info("Text document processing complete!")
     logger.info("=" * 60)
+
+    # Print session summary
+    _print_session_summary()
 
 
 
@@ -834,38 +896,44 @@ def process_youtube_video(
         # Original transcript without translation.
         logger.info("Creating document with original transcript...")
         docx_path_orig, md_path_orig = writer.create_from_segments(
-            title=f"{video_title} (original)",
+            title=f"{video_title}_original",
             transcription_segments=original_transcription_segments,
             translation_segments=None,
             transcribe_method=transcribe_method,
             translate_method="",
             with_timestamps=False,
-            with_speakers=with_speakers
+            with_speakers=with_speakers,
+            description="Оригинальная транскрипция без улучшений"
         )
 
         # Refined transcript (with translation if available, not LLM-polished).
         logger.info("Creating document with refined transcript...")
+        refine_desc = "Улучшенная транскрипция"
+        if translation_segments_refined:
+            refine_desc += " + перевод"
         docx_path_refined, md_path_refined = writer.create_from_segments(
-            title=f"{video_title} (refined)",
+            title=f"{video_title}_refined",
             transcription_segments=refined_transcription_segments,
             translation_segments=translation_segments_refined,
             transcribe_method=f"{transcribe_method} + {refine_model}",
             translate_method=translate_method_str,
             with_timestamps=False,
-            with_speakers=with_speakers
+            with_speakers=with_speakers,
+            description=refine_desc
         )
 
         # Add refined translation document if available.
         if translation_segments_refined_llm:
             logger.info("Creating document with refined translation...")
             docx_path_trans_refined, md_path_trans_refined = writer.create_from_segments(
-                title=f"{video_title} (translated refined)",
+                title=f"{video_title}_translated_refined",
                 transcription_segments=refined_transcription_segments if refined_transcription_segments else original_transcription_segments,
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=f"{transcribe_method} + {refine_model}" if refine_model else transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description="Улучшенная транскрипция + улучшенный перевод (дополнительно отполированный через LLM)"
             )
 
             logger.info("\n" + "=" * 60)
@@ -899,25 +967,27 @@ def process_youtube_video(
             # Original translation document.
             logger.info("Creating document with original translation...")
             docx_path_orig, md_path_orig = writer.create_from_segments(
-                title=f"{video_title} (translated)",
+                title=f"{video_title}_translated",
                 transcription_segments=original_transcription_segments,
                 translation_segments=translation_segments,
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description="Оригинальная транскрипция + перевод"
             )
 
             # Translation refined via LLM.
             logger.info("Creating document with refined translation...")
             docx_path_refined, md_path_refined = writer.create_from_segments(
-                title=f"{video_title} (translated refined)",
+                title=f"{video_title}_translated_refined",
                 transcription_segments=original_transcription_segments,
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description="Оригинальная транскрипция + улучшенный перевод (дополнительно отполированный через LLM)"
             )
 
             logger.info("\n" + "=" * 60)
@@ -932,6 +1002,9 @@ def process_youtube_video(
             logger.info("=" * 60)
         else:
             # Single document (with or without translation).
+            single_desc = "Транскрипция"
+            if translation_segments:
+                single_desc += " + перевод"
             docx_path, md_path = writer.create_from_segments(
                 title=video_title,
                 transcription_segments=original_transcription_segments,
@@ -939,7 +1012,8 @@ def process_youtube_video(
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description=single_desc
             )
 
             logger.info("\n" + "=" * 60)
@@ -959,6 +1033,9 @@ def process_youtube_video(
             summarize_model=summarize_model,
             summarize_backend=summarize_backend
         )
+
+    # Print session summary
+    _print_session_summary()
 
 
 def process_local_video(
@@ -1143,38 +1220,44 @@ def process_local_video(
         # Original transcript without translation.
         logger.info("Creating document with original transcript...")
         docx_path_orig, md_path_orig = writer.create_from_segments(
-            title=f"{audio_title} (original)",
+            title=f"{audio_title}_original",
             transcription_segments=original_transcription_segments,
             translation_segments=None,
             transcribe_method=transcribe_method,
             translate_method="",
             with_timestamps=False,
-            with_speakers=with_speakers
+            with_speakers=with_speakers,
+            description="Оригинальная транскрипция без улучшений"
         )
 
         # Refined transcript (with translation if available).
         logger.info("Creating document with refined transcript...")
+        refine_desc = "Улучшенная транскрипция"
+        if translation_segments_refined:
+            refine_desc += " + перевод"
         docx_path_refined, md_path_refined = writer.create_from_segments(
-            title=f"{audio_title} (refined)",
+            title=f"{audio_title}_refined",
             transcription_segments=refined_transcription_segments,
             translation_segments=translation_segments_refined,
             transcribe_method=f"{transcribe_method} + {refine_model}",
             translate_method=translate_method_str,
             with_timestamps=False,
-            with_speakers=with_speakers
+            with_speakers=with_speakers,
+            description=refine_desc
         )
 
         # Create refined translation document if available.
         if translation_segments_refined_llm:
             logger.info("Creating document with refined translation...")
             docx_path_trans_refined, md_path_trans_refined = writer.create_from_segments(
-                title=f"{audio_title} (translated refined)",
+                title=f"{audio_title}_translated_refined",
                 transcription_segments=refined_transcription_segments if refined_transcription_segments else original_transcription_segments,
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=f"{transcribe_method} + {refine_model}" if refine_model else transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description="Улучшенная транскрипция + улучшенный перевод (дополнительно отполированный через LLM)"
             )
 
             logger.info("\n" + "=" * 60)
@@ -1208,25 +1291,27 @@ def process_local_video(
             # Original translation document.
             logger.info("Creating document with original translation...")
             docx_path_orig, md_path_orig = writer.create_from_segments(
-                title=f"{audio_title} (translated)",
+                title=f"{audio_title}_translated",
                 transcription_segments=original_transcription_segments,
                 translation_segments=translation_segments,
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description="Оригинальная транскрипция + перевод"
             )
 
             # LLM-refined translation.
             logger.info("Creating document with refined translation...")
             docx_path_refined, md_path_refined = writer.create_from_segments(
-                title=f"{audio_title} (translated refined)",
+                title=f"{audio_title}_translated_refined",
                 transcription_segments=original_transcription_segments,
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description="Улучшенная транскрипция + улучшенный перевод (дополнительно отполированный через LLM)"
             )
 
             logger.info("\n" + "=" * 60)
@@ -1248,7 +1333,8 @@ def process_local_video(
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description="Транскрипция" + (" + перевод" if translation_segments else "")
             )
 
             logger.info("\n" + "=" * 60)
@@ -1268,6 +1354,9 @@ def process_local_video(
             summarize_model=summarize_model,
             summarize_backend=summarize_backend
         )
+
+    # Print session summary
+    _print_session_summary()
 
 
 def process_local_audio(
@@ -1440,38 +1529,44 @@ def process_local_audio(
         # Original transcript without translation.
         logger.info("Creating document with original transcript...")
         docx_path_orig, md_path_orig = writer.create_from_segments(
-            title=f"{audio_title} (original)",
+            title=f"{audio_title}_original",
             transcription_segments=original_transcription_segments,
             translation_segments=None,
             transcribe_method=transcribe_method,
             translate_method="",
             with_timestamps=False,
-            with_speakers=with_speakers
+            with_speakers=with_speakers,
+            description="Оригинальная транскрипция без улучшений"
         )
 
         # Refined transcript (with translation if available).
         logger.info("Creating document with refined transcript...")
+        refine_desc = "Улучшенная транскрипция"
+        if translation_segments_refined:
+            refine_desc += " + перевод"
         docx_path_refined, md_path_refined = writer.create_from_segments(
-            title=f"{audio_title} (refined)",
+            title=f"{audio_title}_refined",
             transcription_segments=refined_transcription_segments,
             translation_segments=translation_segments_refined,
             transcribe_method=f"{transcribe_method} + {refine_model}",
             translate_method=translate_method_str,
             with_timestamps=False,
-            with_speakers=with_speakers
+            with_speakers=with_speakers,
+            description=refine_desc
         )
 
         # Create refined translation document if available.
         if translation_segments_refined_llm:
             logger.info("Creating document with refined translation...")
             docx_path_trans_refined, md_path_trans_refined = writer.create_from_segments(
-                title=f"{audio_title} (translated refined)",
+                title=f"{audio_title}_translated_refined",
                 transcription_segments=refined_transcription_segments if refined_transcription_segments else original_transcription_segments,
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=f"{transcribe_method} + {refine_model}" if refine_model else transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description="Улучшенная транскрипция + улучшенный перевод (дополнительно отполированный через LLM)"
             )
 
             logger.info("\n" + "=" * 60)
@@ -1505,25 +1600,27 @@ def process_local_audio(
             # Original translation document.
             logger.info("Creating document with original translation...")
             docx_path_orig, md_path_orig = writer.create_from_segments(
-                title=f"{audio_title} (translated)",
+                title=f"{audio_title}_translated",
                 transcription_segments=original_transcription_segments,
                 translation_segments=translation_segments,
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description="Оригинальная транскрипция + перевод"
             )
 
             # LLM-refined translation.
             logger.info("Creating document with refined translation...")
             docx_path_refined, md_path_refined = writer.create_from_segments(
-                title=f"{audio_title} (translated refined)",
+                title=f"{audio_title}_translated_refined",
                 transcription_segments=original_transcription_segments,
                 translation_segments=translation_segments_refined_llm,
                 transcribe_method=transcribe_method,
                 translate_method=f"{translate_method_str} + {refine_translation_model}",
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description="Улучшенная транскрипция + улучшенный перевод (дополнительно отполированный через LLM)"
             )
 
             logger.info("\n" + "=" * 60)
@@ -1545,7 +1642,8 @@ def process_local_audio(
                 transcribe_method=transcribe_method,
                 translate_method=translate_method_str,
                 with_timestamps=False,
-                with_speakers=with_speakers
+                with_speakers=with_speakers,
+                description="Транскрипция" + (" + перевод" if translation_segments else "")
             )
 
             logger.info("\n" + "=" * 60)
@@ -1565,6 +1663,9 @@ def process_local_audio(
             summarize_model=summarize_model,
             summarize_backend=summarize_backend
         )
+
+    # Print session summary
+    _print_session_summary()
 
 
 def main():

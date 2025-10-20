@@ -4,7 +4,13 @@ from pathlib import Path
 import tempfile
 import shutil
 from unittest.mock import Mock, patch, MagicMock
-from src.main import load_prompt_from_file, process_text_file
+from src.main import (
+    load_prompt_from_file,
+    process_text_file,
+    process_youtube_video,
+    process_local_audio,
+    process_local_video
+)
 
 
 @pytest.fixture
@@ -225,3 +231,174 @@ class TestEdgeCases:
 
         process_text_file("many.txt")
         mock_reader.read_file.assert_called_once()
+
+
+class TestCLISmokeTests:
+    """Smoke tests for main CLI entry points - verify basic flow without external APIs"""
+
+    @patch('src.main.Transcriber')
+    @patch('src.main.DocumentWriter')
+    @patch('src.main.YouTubeDownloader')
+    def test_process_youtube_video_basic_flow(
+        self, mock_downloader_class, mock_writer_class, mock_transcriber_class
+    ):
+        """Smoke test: YouTube video processing basic flow"""
+        # Mock downloader
+        mock_downloader = MagicMock()
+        mock_downloader.extract_metadata.return_value = {
+            'title': 'Test Video',
+            'description': 'Test description'
+        }
+        # download_audio returns: (audio_path, video_title, duration, metadata)
+        mock_downloader.download_audio.return_value = (
+            '/tmp/test_audio.mp3',
+            'Test Video',
+            120.0,
+            {'title': 'Test Video', 'description': 'Test description'}
+        )
+        mock_downloader_class.return_value = mock_downloader
+
+        # Mock transcriber
+        from src.transcriber import TranscriptionSegment
+        mock_transcriber = MagicMock()
+        mock_transcriber.transcribe.return_value = [
+            TranscriptionSegment(0, 5, "Hello"),
+            TranscriptionSegment(5, 10, "World")
+        ]
+        mock_transcriber.segments_to_text.return_value = "Hello World"
+        mock_transcriber_class.return_value = mock_transcriber
+
+        # Mock writer
+        mock_writer = MagicMock()
+        mock_writer.create_from_segments.return_value = ('/tmp/out.docx', '/tmp/out.md')
+        mock_writer_class.return_value = mock_writer
+
+        # Run the function
+        process_youtube_video(
+            url='https://youtube.com/watch?v=test',
+            transcribe_method='whisper_local'
+        )
+
+        # Verify flow
+        mock_downloader.download_audio.assert_called_once()
+        mock_transcriber.transcribe.assert_called_once()
+        mock_writer.create_from_segments.assert_called()
+
+    @patch('src.main.Transcriber')
+    @patch('src.main.DocumentWriter')
+    def test_process_local_audio_basic_flow(
+        self, mock_writer_class, mock_transcriber_class, temp_dir
+    ):
+        """Smoke test: Local audio file processing basic flow"""
+        # Create a fake audio file
+        audio_file = temp_dir / "test_audio.mp3"
+        audio_file.touch()
+
+        # Mock transcriber
+        from src.transcriber import TranscriptionSegment
+        mock_transcriber = MagicMock()
+        mock_transcriber.transcribe.return_value = [
+            TranscriptionSegment(0, 5, "Test audio")
+        ]
+        mock_transcriber.segments_to_text.return_value = "Test audio"
+        mock_transcriber_class.return_value = mock_transcriber
+
+        # Mock writer
+        mock_writer = MagicMock()
+        mock_writer.create_from_segments.return_value = ('/tmp/out.docx', '/tmp/out.md')
+        mock_writer_class.return_value = mock_writer
+
+        # Run the function
+        process_local_audio(
+            audio_path=str(audio_file),
+            transcribe_method='whisper_local'
+        )
+
+        # Verify flow
+        mock_transcriber.transcribe.assert_called_once()
+        mock_writer.create_from_segments.assert_called()
+
+    @patch('src.main.Transcriber')
+    @patch('src.main.DocumentWriter')
+    @patch('src.main.VideoProcessor')
+    def test_process_local_video_basic_flow(
+        self, mock_video_processor_class, mock_writer_class, mock_transcriber_class, temp_dir
+    ):
+        """Smoke test: Local video file processing basic flow"""
+        # Create a fake video file
+        video_file = temp_dir / "test_video.mp4"
+        video_file.touch()
+
+        # Mock video processor
+        mock_video_processor = MagicMock()
+        mock_video_processor.extract_audio.return_value = '/tmp/extracted_audio.mp3'
+        mock_video_processor_class.return_value = mock_video_processor
+
+        # Mock transcriber
+        from src.transcriber import TranscriptionSegment
+        mock_transcriber = MagicMock()
+        mock_transcriber.transcribe.return_value = [
+            TranscriptionSegment(0, 5, "Video content")
+        ]
+        mock_transcriber.segments_to_text.return_value = "Video content"
+        mock_transcriber_class.return_value = mock_transcriber
+
+        # Mock writer
+        mock_writer = MagicMock()
+        mock_writer.create_from_segments.return_value = ('/tmp/out.docx', '/tmp/out.md')
+        mock_writer_class.return_value = mock_writer
+
+        # Run the function
+        process_local_video(
+            video_path=str(video_file),
+            transcribe_method='whisper_local'
+        )
+
+        # Verify flow
+        mock_video_processor.extract_audio.assert_called_once()
+        mock_transcriber.transcribe.assert_called_once()
+        mock_writer.create_from_segments.assert_called()
+
+    @patch('src.translator.Translator')
+    @patch('src.main.Transcriber')
+    @patch('src.main.DocumentWriter')
+    def test_process_local_audio_with_translation(
+        self, mock_writer_class, mock_transcriber_class, mock_translator_class, temp_dir
+    ):
+        """Smoke test: Audio processing with translation"""
+        # Create a fake audio file
+        audio_file = temp_dir / "test_audio.mp3"
+        audio_file.touch()
+
+        # Mock transcriber
+        from src.transcriber import TranscriptionSegment
+        mock_transcriber = MagicMock()
+        mock_transcriber.transcribe.return_value = [
+            TranscriptionSegment(0, 5, "Hello")
+        ]
+        mock_transcriber.segments_to_text.return_value = "Hello"
+        mock_transcriber_class.return_value = mock_transcriber
+
+        # Mock translator
+        mock_translator = MagicMock()
+        mock_translator.model_name = "facebook/nllb-200-distilled-1.3B"
+        mock_translator.translate_segments.return_value = [
+            TranscriptionSegment(0, 5, "Привет")
+        ]
+        mock_translator_class.return_value = mock_translator
+
+        # Mock writer
+        mock_writer = MagicMock()
+        mock_writer.create_from_segments.return_value = ('/tmp/out.docx', '/tmp/out.md')
+        mock_writer_class.return_value = mock_writer
+
+        # Run with translation
+        process_local_audio(
+            audio_path=str(audio_file),
+            transcribe_method='whisper_local',
+            translate_methods=['NLLB']
+        )
+
+        # Verify translation was called
+        mock_translator.translate_segments.assert_called()
+        mock_writer.create_from_segments.assert_called()

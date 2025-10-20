@@ -73,8 +73,12 @@ class TestTranslator:
 
         translator = Translator()
 
-        # Mock translate_text to avoid model loading
-        with patch.object(translator, 'translate_text', return_value="Translated"):
+        # Mock translate_text to return text with markers (as the real translator would)
+        def mock_translate(text, source_lang, target_lang):
+            # Return translated text preserving the markers
+            return text.replace("First", "Первый").replace("Second", "Второй")
+
+        with patch.object(translator, 'translate_text', side_effect=mock_translate):
             segments = [
                 TranscriptionSegment(0, 5, "First"),
                 TranscriptionSegment(5, 10, "Second")
@@ -83,7 +87,8 @@ class TestTranslator:
             result = translator.translate_segments(segments, source_lang='en', target_lang='ru')
 
             assert len(result) == 2
-            assert all(seg.text == "Translated" for seg in result)
+            assert result[0].text == "Первый"
+            assert result[1].text == "Второй"
 
     @pytest.mark.integration
     @pytest.mark.skip(reason="Requires NLLB model")

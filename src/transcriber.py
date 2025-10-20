@@ -2,6 +2,7 @@
 Module responsible for audio transcription via Whisper.
 """
 import atexit
+import hashlib
 import inspect
 import re
 import warnings
@@ -16,6 +17,7 @@ from tqdm import tqdm
 from src.config import settings, TranscribeOptions
 from src.logger import logger
 from src.utils import format_timestamp, estimate_processing_time, format_log_preview
+from src.api_cache import get_cache
 
 # Suppress deprecation warnings from third-party libraries
 # These are coming from pyannote.audio and speechbrain internals that we don't control
@@ -137,14 +139,47 @@ class TranscriptionSegment:
         }
 
 
+def _compute_audio_hash(audio_path: Path, chunk_size: int = 8192) -> str:
+    """
+    Compute SHA-256 hash of an audio file for caching purposes.
+
+    We only hash the first 1MB to speed up the process for large files,
+    as transcription parameters also contribute to cache key uniqueness.
+
+    Args:
+        audio_path: Path to the audio file
+        chunk_size: Size of chunks to read
+
+    Returns:
+        Hex digest of the file hash
+    """
+    hasher = hashlib.sha256()
+    bytes_read = 0
+    max_bytes = 1024 * 1024  # 1MB
+
+    with open(audio_path, 'rb') as f:
+        while bytes_read < max_bytes:
+            chunk = f.read(min(chunk_size, max_bytes - bytes_read))
+            if not chunk:
+                break
+            hasher.update(chunk)
+            bytes_read += len(chunk)
+
+    return hasher.hexdigest()
+
+
 class Transcriber:
     """Whisper-based audio transcriber."""
 
-    def __init__(self, method: str = TranscribeOptions.WHISPER_BASE):
+    def __init__(self, method: str = TranscribeOptions.WHISPER_BASE, use_cache: bool = True):
         self.method = method
         self.model = None
         self.device = self._get_device()
+        self.use_cache = use_cache
+        self.cache = get_cache() if use_cache else None
         logger.info("Using device: %s", self.device)
+        if use_cache:
+            logger.info("Transcription caching enabled")
 
     def _get_device(self) -> str:
         """Detect the best available device for inference."""
@@ -230,6 +265,31 @@ class Transcriber:
         else:
             logger.warning("No initial prompt provided. Consider using --whisper-prompt for better accuracy.")
 
+        # Check cache first
+        if self.use_cache:
+            audio_hash = _compute_audio_hash(audio_path)
+            cache_key = {
+                "audio_hash": audio_hash,
+                "method": self.method,
+                "language": language,
+                "with_speakers": with_speakers,
+                "initial_prompt": initial_prompt or ""
+            }
+            cached_result = self.cache.get("transcription", cache_key)
+            if cached_result is not None:
+                logger.info("Using cached transcription result")
+                # Reconstruct TranscriptionSegment objects from cached dict
+                segments = [
+                    TranscriptionSegment(
+                        start=seg["start"],
+                        end=seg["end"],
+                        text=seg["text"],
+                        speaker=seg.get("speaker")
+                    )
+                    for seg in cached_result
+                ]
+                return segments
+
         # Use OpenAI API if specified
         if self.method == TranscribeOptions.WHISPER_OPENAI_API:
             segments = self._transcribe_with_openai_api(audio_path, language, initial_prompt)
@@ -311,6 +371,11 @@ class Transcriber:
         # Apply speaker diarization if requested
         if with_speakers:
             segments = self._perform_speaker_diarization(audio_path, segments)
+
+        # Cache the result
+        if self.use_cache:
+            segments_dict = [seg.to_dict() for seg in segments]
+            self.cache.set("transcription", cache_key, segments_dict)
 
         return segments
 

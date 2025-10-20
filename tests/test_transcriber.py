@@ -247,17 +247,19 @@ class TestChunking:
 
         with patch.object(transcriber, '_split_audio_file', return_value=mock_chunks):
             with patch.object(transcriber, '_transcribe_single_file_with_openai', side_effect=mock_transcribe_single):
-                # Mock file size check
-                fake_path = Path("/fake/large_audio.mp3")
-                with patch.object(Path, 'stat') as mock_stat:
-                    mock_stat.return_value.st_size = 50 * 1024 * 1024  # 50 MB
+                # Mock OpenAI API key
+                with patch('src.transcriber.settings.OPENAI_API_KEY', 'mock-api-key'):
+                    # Mock file size check
+                    fake_path = Path("/fake/large_audio.mp3")
+                    with patch.object(Path, 'stat') as mock_stat:
+                        mock_stat.return_value.st_size = 50 * 1024 * 1024  # 50 MB
 
-                    # Call the main transcription method
-                    segments = transcriber._transcribe_with_openai_api(
-                        fake_path,
-                        language='en',
-                        initial_prompt=None
-                    )
+                        # Call the main transcription method
+                        segments = transcriber._transcribe_with_openai_api(
+                            fake_path,
+                            language='en',
+                            initial_prompt=None
+                        )
 
                     # Should have 2 segments (chunk 1 was silent)
                     assert len(segments) == 2

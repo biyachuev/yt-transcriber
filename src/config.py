@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     OUTPUT_DIR: Path = BASE_DIR / "output"
     TEMP_DIR: Path = BASE_DIR / "temp"
     LOGS_DIR: Path = BASE_DIR / "logs"
+    CACHE_DIR: Path = BASE_DIR / "cache"
     
     # API keys.
     OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
@@ -51,6 +52,7 @@ class Settings(BaseSettings):
         self.OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
         self.TEMP_DIR.mkdir(exist_ok=True, parents=True)
         self.LOGS_DIR.mkdir(exist_ok=True, parents=True)
+        self.CACHE_DIR.mkdir(exist_ok=True, parents=True)
         self.WHISPER_MODEL_DIR.mkdir(exist_ok=True, parents=True)
         self.NLLB_MODEL_DIR.mkdir(exist_ok=True, parents=True)
         
