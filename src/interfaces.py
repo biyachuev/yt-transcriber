@@ -121,15 +121,15 @@ class CostTrackerProtocol(Protocol):
         """Track transcription cost"""
         ...
 
-    def add_translation(self, prompt_tokens: int, completion_tokens: int) -> None:
+    def add_translation(self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None) -> None:
         """Track translation cost"""
         ...
 
-    def add_refinement(self, prompt_tokens: int, completion_tokens: int) -> None:
+    def add_refinement(self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None) -> None:
         """Track refinement cost"""
         ...
 
-    def add_summarization(self, prompt_tokens: int, completion_tokens: int) -> None:
+    def add_summarization(self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None) -> None:
         """Track summarization cost"""
         ...
 

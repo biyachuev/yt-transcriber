@@ -8,44 +8,51 @@ from src.main import validate_args
 
 
 class TestValidateArgs:
-    """Tests for validate_args function"""
+    """Tests for validate_args function with subcommand structure"""
 
-    def create_args(self, **kwargs):
-        """Helper to create args namespace with defaults"""
+    def create_args(self, command='youtube', **kwargs):
+        """Helper to create args namespace with defaults for a specific command"""
         defaults = {
-            'url': None,
-            'input_audio': None,
-            'input_video': None,
-            'input_text': None,
-            'transcribe': None,
-            'translate': None,
             'refine_model': None,
             'refine_backend': 'ollama',
             'refine_translation': None,
-            'summarize': False,
             'summarize_model': None,
             'summarize_backend': 'ollama',
         }
+
+        # Command-specific defaults
+        if command == 'youtube':
+            defaults.update({
+                'url': None,
+                'transcribe': None,
+                'translate': None,
+                'speakers': False,
+            })
+        elif command in ['audio', 'video']:
+            defaults.update({
+                'input': None,
+                'transcribe': None,
+                'translate': None,
+                'speakers': False,
+            })
+        elif command == 'text':
+            defaults.update({
+                'input': None,
+                'translate': None,
+            })
+
         defaults.update(kwargs)
         return argparse.Namespace(**defaults)
 
-    def test_validate_no_input_source(self):
-        """Test validation fails when no input source is provided"""
-        args = self.create_args()
-        assert validate_args(args) is False
-
-    def test_validate_multiple_input_sources(self):
-        """Test validation fails when multiple input sources are provided"""
-        args = self.create_args(
-            url="https://youtube.com/watch?v=test",
-            input_audio="test.mp3"
-        )
-        assert validate_args(args) is False
+    def test_validate_youtube_without_transcribe(self):
+        """Test validation fails when youtube command lacks transcribe method"""
+        args = self.create_args(command='youtube', url="https://youtube.com/watch?v=test")
+        assert validate_args('youtube', args) is False
 
     def test_validate_audio_without_transcribe(self):
-        """Test validation fails when audio input without transcribe method"""
-        args = self.create_args(input_audio="test.mp3")
-        assert validate_args(args) is False
+        """Test validation fails when audio command lacks transcribe method"""
+        args = self.create_args(command='audio', input="test.mp3")
+        assert validate_args('audio', args) is False
 
     @patch('src.main.Path')
     def test_validate_nonexistent_audio_file(self, mock_path):
@@ -55,27 +62,30 @@ class TestValidateArgs:
         mock_path.return_value = mock_path_instance
 
         args = self.create_args(
-            input_audio="nonexistent.mp3",
-            transcribe="whisper_base"
+            command='audio',
+            input="nonexistent.mp3",
+            transcribe="whisper-base"
         )
-        assert validate_args(args) is False
+        assert validate_args('audio', args) is False
 
     def test_validate_invalid_transcribe_method(self):
         """Test validation fails with invalid transcription method"""
         args = self.create_args(
+            command='youtube',
             url="https://youtube.com/watch?v=test",
             transcribe="invalid_method"
         )
-        assert validate_args(args) is False
+        assert validate_args('youtube', args) is False
 
     def test_validate_invalid_translation_method(self):
         """Test validation fails with invalid translation method"""
         args = self.create_args(
+            command='youtube',
             url="https://youtube.com/watch?v=test",
             transcribe="whisper_base",
             translate="invalid_translation"
         )
-        assert validate_args(args) is False
+        assert validate_args('youtube', args) is False
 
     @patch('src.main.settings')
     def test_validate_openai_transcribe_without_key(self, mock_settings):
@@ -83,10 +93,11 @@ class TestValidateArgs:
         mock_settings.OPENAI_API_KEY = None
 
         args = self.create_args(
+            command='youtube',
             url="https://youtube.com/watch?v=test",
             transcribe="whisper_openai_api"
         )
-        assert validate_args(args) is False
+        assert validate_args('youtube', args) is False
 
     @patch('src.main.settings')
     def test_validate_openai_translate_without_key(self, mock_settings):
@@ -94,11 +105,12 @@ class TestValidateArgs:
         mock_settings.OPENAI_API_KEY = None
 
         args = self.create_args(
+            command='youtube',
             url="https://youtube.com/watch?v=test",
             transcribe="whisper_base",
             translate="openai_api"
         )
-        assert validate_args(args) is False
+        assert validate_args('youtube', args) is False
 
     @patch('src.main.settings')
     @patch('requests.get')
@@ -118,12 +130,13 @@ class TestValidateArgs:
         mock_get.return_value = mock_response
 
         args = self.create_args(
+            command='youtube',
             url="https://youtube.com/watch?v=test",
             transcribe="whisper_base",
             refine_model="nonexistent_model",
             refine_backend="ollama"
         )
-        assert validate_args(args) is False
+        assert validate_args('youtube', args) is False
 
     @patch('src.main.settings')
     @patch('requests.get')
@@ -136,12 +149,13 @@ class TestValidateArgs:
         mock_get.side_effect = requests.exceptions.RequestException("Connection refused")
 
         args = self.create_args(
+            command='youtube',
             url="https://youtube.com/watch?v=test",
             transcribe="whisper_base",
             refine_model="qwen2.5:7b",
             refine_backend="ollama"
         )
-        assert validate_args(args) is False
+        assert validate_args('youtube', args) is False
 
     @patch('src.main.settings')
     def test_validate_openai_refine_without_key(self, mock_settings):
@@ -149,12 +163,13 @@ class TestValidateArgs:
         mock_settings.OPENAI_API_KEY = None
 
         args = self.create_args(
+            command='youtube',
             url="https://youtube.com/watch?v=test",
             transcribe="whisper_base",
             refine_model="gpt-4o-mini",
             refine_backend="openai_api"
         )
-        assert validate_args(args) is False
+        assert validate_args('youtube', args) is False
 
     @patch('src.main.settings')
     @patch('requests.get')
@@ -171,13 +186,13 @@ class TestValidateArgs:
         mock_get.return_value = mock_response
 
         args = self.create_args(
+            command='youtube',
             url="https://youtube.com/watch?v=test",
             transcribe="whisper_base",
-            summarize=True,
             summarize_model="nonexistent_summary_model",
             summarize_backend="ollama"
         )
-        assert validate_args(args) is False
+        assert validate_args('youtube', args) is False
 
     @patch('src.main.settings')
     @patch('requests.get')
@@ -197,17 +212,19 @@ class TestValidateArgs:
         mock_get.return_value = mock_response
 
         args = self.create_args(
+            command='youtube',
             url="https://youtube.com/watch?v=test",
             transcribe="whisper_base",
             translate="NLLB",
             refine_model="qwen2.5:7b",
             refine_backend="ollama"
         )
-        assert validate_args(args) is True
+        assert validate_args('youtube', args) is True
 
     def test_validate_multiple_translation_methods(self):
         """Test validation with multiple translation methods"""
         args = self.create_args(
+            command='youtube',
             url="https://youtube.com/watch?v=test",
             transcribe="whisper_base",
             translate="NLLB,openai_api"
@@ -215,7 +232,7 @@ class TestValidateArgs:
         # Should fail because openai_api requires API key
         with patch('src.main.settings') as mock_settings:
             mock_settings.OPENAI_API_KEY = None
-            assert validate_args(args) is False
+            assert validate_args('youtube', args) is False
 
     @patch('src.main.settings')
     @patch('requests.get')
@@ -228,33 +245,64 @@ class TestValidateArgs:
         mock_get.side_effect = requests.exceptions.RequestException("Connection refused")
 
         args = self.create_args(
+            command='youtube',
             url="https://youtube.com/watch?v=test",
             transcribe="whisper_base",
             translate="NLLB",
             refine_translation="qwen2.5:7b"
         )
-        assert validate_args(args) is False
+        assert validate_args('youtube', args) is False
+
+    def test_validate_text_command_without_transcribe(self):
+        """Test text command doesn't require transcribe"""
+        args = self.create_args(
+            command='text',
+            input="document.docx",
+            translate="NLLB"
+        )
+        # Text command should not require transcribe
+        # This test validates that text processing works differently
+        with patch('src.main.Path') as mock_path:
+            mock_path_instance = MagicMock()
+            mock_path_instance.exists.return_value = True
+            mock_path.return_value = mock_path_instance
+            # Should succeed without transcribe for text command
+            assert validate_args('text', args) is True
 
 
 class TestValidateArgsIntegration:
-    """Integration tests for validate_args"""
+    """Integration tests for validate_args with new command structure"""
 
-    def create_args(self, **kwargs):
+    def create_args(self, command='youtube', **kwargs):
         """Helper to create args namespace with defaults"""
         defaults = {
-            'url': None,
-            'input_audio': None,
-            'input_video': None,
-            'input_text': None,
-            'transcribe': None,
-            'translate': None,
             'refine_model': None,
             'refine_backend': 'ollama',
             'refine_translation': None,
-            'summarize': False,
             'summarize_model': None,
             'summarize_backend': 'ollama',
         }
+
+        if command == 'youtube':
+            defaults.update({
+                'url': None,
+                'transcribe': None,
+                'translate': None,
+                'speakers': False,
+            })
+        elif command in ['audio', 'video']:
+            defaults.update({
+                'input': None,
+                'transcribe': None,
+                'translate': None,
+                'speakers': False,
+            })
+        elif command == 'text':
+            defaults.update({
+                'input': None,
+                'translate': None,
+            })
+
         defaults.update(kwargs)
         return argparse.Namespace(**defaults)
 
@@ -274,6 +322,7 @@ class TestValidateArgsIntegration:
             mock_get.return_value = mock_response
 
             args = self.create_args(
+                command='youtube',
                 url="https://youtube.com/watch?v=Y4u9EOTwjqw",
                 transcribe="whisper_base",
                 refine_model="nonexistent_model_12345",
@@ -281,7 +330,7 @@ class TestValidateArgsIntegration:
             )
 
             # Validation should fail immediately
-            result = validate_args(args)
+            result = validate_args('youtube', args)
             assert result is False, "Validation should fail before downloading video"
 
     def test_validate_catches_missing_api_key_early(self):
@@ -290,10 +339,22 @@ class TestValidateArgsIntegration:
             mock_settings.OPENAI_API_KEY = None
 
             args = self.create_args(
+                command='youtube',
                 url="https://youtube.com/watch?v=test",
                 transcribe="whisper_openai_api"
             )
 
             # Should fail immediately
-            result = validate_args(args)
+            result = validate_args('youtube', args)
             assert result is False, "Should catch missing API key before transcription"
+
+    def test_validate_new_command_structure(self):
+        """Test that new command-based structure works correctly"""
+        # All commands should be validated independently
+        commands_with_transcribe = ['youtube', 'audio', 'video']
+
+        for command in commands_with_transcribe:
+            args = self.create_args(command=command)
+            # Should fail without transcribe
+            result = validate_args(command, args)
+            assert result is False, f"{command} should require transcribe"

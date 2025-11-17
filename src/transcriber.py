@@ -924,9 +924,44 @@ class Transcriber:
                 f"Maximum supported: {max_size / (1024**3):.0f} GB"
             )
 
+    def _get_silero_vad(self):
+        """
+        Get or create Silero VAD model (lightweight alternative to pyannote).
+
+        Returns:
+            Silero VAD model or None if not available.
+        """
+        if hasattr(self, '_silero_vad_model'):
+            return self._silero_vad_model
+
+        try:
+            import torch
+            logger.debug("Attempting to load Silero VAD model...")
+
+            # Load Silero VAD from torch hub (1.8MB model)
+            model, utils = torch.hub.load(
+                repo_or_dir='snakers4/silero-vad',
+                model='silero_vad',
+                force_reload=False,
+                onnx=False
+            )
+
+            # Cache the model and utilities
+            self._silero_vad_model = model
+            self._silero_vad_utils = utils
+
+            logger.info("Silero VAD model loaded successfully (1.8MB)")
+            return model
+
+        except Exception as e:
+            logger.debug("Could not load Silero VAD: %s", e)
+            self._silero_vad_model = None
+            return None
+
     def _find_speech_boundaries(self, audio_path: Path) -> List[tuple]:
         """
         Use VAD to find speech segment boundaries.
+        Tries Silero VAD first (lightweight), falls back to pyannote if unavailable.
 
         Args:
             audio_path: Path to audio file.
@@ -934,11 +969,20 @@ class Transcriber:
         Returns:
             List of (start, end) tuples in seconds for speech segments.
         """
+        # Try Silero VAD first (faster, lighter)
+        silero_model = self._get_silero_vad()
+        if silero_model is not None:
+            try:
+                return self._find_speech_boundaries_silero(audio_path, silero_model)
+            except Exception as e:
+                logger.warning("Silero VAD failed: %s. Trying pyannote...", e)
+
+        # Fall back to pyannote VAD
         vad_pipeline = self._get_vad_pipeline()
         if not vad_pipeline:
             return []
 
-        logger.info("Detecting speech boundaries with VAD...")
+        logger.info("Detecting speech boundaries with pyannote VAD...")
 
         try:
             # Run VAD
@@ -955,6 +999,61 @@ class Transcriber:
         except Exception as e:
             logger.warning("VAD failed: %s. Falling back to simple splitting.", e)
             return []
+
+    def _find_speech_boundaries_silero(self, audio_path: Path, model) -> List[tuple]:
+        """
+        Use Silero VAD to find speech boundaries (faster alternative to pyannote).
+
+        Args:
+            audio_path: Path to audio file.
+            model: Silero VAD model.
+
+        Returns:
+            List of (start, end) tuples in seconds for speech segments.
+        """
+        import torch
+        import torchaudio
+
+        logger.info("Detecting speech boundaries with Silero VAD...")
+
+        # Load audio
+        wav, sample_rate = torchaudio.load(str(audio_path))
+
+        # Convert to mono if needed
+        if wav.shape[0] > 1:
+            wav = torch.mean(wav, dim=0, keepdim=True)
+
+        # Resample to 16kHz if needed (Silero VAD requirement)
+        if sample_rate != 16000:
+            resampler = torchaudio.transforms.Resample(sample_rate, 16000)
+            wav = resampler(wav)
+            sample_rate = 16000
+
+        # Get VAD utilities
+        utils = self._silero_vad_utils
+        get_speech_timestamps = utils[0]
+
+        # Run VAD with optimized parameters
+        speech_timestamps = get_speech_timestamps(
+            wav.squeeze(0),
+            model,
+            sampling_rate=sample_rate,
+            threshold=0.5,  # Speech probability threshold
+            min_speech_duration_ms=250,  # Minimum speech duration
+            min_silence_duration_ms=300,  # Minimum silence to split
+            window_size_samples=512,  # Processing window
+            speech_pad_ms=30  # Padding around speech
+        )
+
+        # Convert to seconds
+        speech_segments = []
+        for ts in speech_timestamps:
+            start_sec = ts['start'] / sample_rate
+            end_sec = ts['end'] / sample_rate
+            speech_segments.append((start_sec, end_sec))
+
+        logger.info("Found %d speech segments with Silero VAD", len(speech_segments))
+        return speech_segments
 
     def _split_audio_file(self, audio_path: Path, max_size_mb: int = 24) -> List[tuple]:
         """
@@ -990,14 +1089,51 @@ class Transcriber:
         )
         total_duration = float(result.stdout.strip())
 
-        # Calculate how many chunks we need
+        # Get actual bitrate for accurate chunk size estimation
+        bitrate_result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=bit_rate",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(audio_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False  # Don't fail if bitrate is unavailable
+        )
+
+        # Calculate target chunk duration more accurately
         file_size_mb = audio_path.stat().st_size / (1024 * 1024)
-        num_chunks = int(file_size_mb / max_size_mb) + 1
-        target_chunk_duration = total_duration / num_chunks
+
+        if bitrate_result.returncode == 0 and bitrate_result.stdout.strip():
+            try:
+                # Bitrate in bits per second
+                bitrate_bps = float(bitrate_result.stdout.strip())
+                # Calculate MB per second
+                mb_per_second = (bitrate_bps / 8) / (1024 * 1024)
+                # Calculate duration that fits in max_size_mb
+                target_chunk_duration = max_size_mb / mb_per_second if mb_per_second > 0 else total_duration
+                num_chunks = int(total_duration / target_chunk_duration) + 1
+
+                logger.debug(
+                    "Using actual bitrate: %.0f kbps (%.3f MB/sec)",
+                    bitrate_bps / 1000, mb_per_second
+                )
+            except (ValueError, ZeroDivisionError):
+                # Fallback to file size based calculation
+                num_chunks = int(file_size_mb / max_size_mb) + 1
+                target_chunk_duration = total_duration / num_chunks
+                logger.debug("Could not parse bitrate, using file size estimation")
+        else:
+            # Fallback: assume constant bytes/sec based on total file size
+            num_chunks = int(file_size_mb / max_size_mb) + 1
+            target_chunk_duration = total_duration / num_chunks
+            logger.debug("Bitrate unavailable, using file size estimation")
 
         logger.info(
-            "Splitting %.2f MB file (%.1f sec) into ~%d chunks",
-            file_size_mb, total_duration, num_chunks
+            "Splitting %.2f MB file (%.1f sec) into ~%d chunks (target: %.1f sec each)",
+            file_size_mb, total_duration, num_chunks, target_chunk_duration
         )
 
         # Try to get speech boundaries from VAD
@@ -1127,8 +1263,41 @@ class Transcriber:
         # VAD-based splitting: find optimal boundaries
         logger.info("Using VAD-based smart splitting at speech boundaries")
 
+        # Precompute gaps between speech segments once (O(n) instead of O(n²))
+        gaps = []
+        min_gap_duration = 0.3  # Minimum gap duration to consider (300ms)
+        gap_padding = 0.1  # Padding around split points to avoid mid-syllable cuts (100ms)
+
+        for i in range(len(speech_segments) - 1):
+            gap_start = speech_segments[i][1]  # End of current segment
+            gap_end = speech_segments[i + 1][0]  # Start of next segment
+            gap_duration = gap_end - gap_start
+
+            # Only consider gaps longer than minimum duration
+            if gap_duration >= min_gap_duration:
+                # Use the middle of the gap as split point, with padding
+                gap_middle = (gap_start + gap_end) / 2
+                gaps.append(gap_middle)
+
+        logger.debug("Found %d suitable gaps (>= %.1fs) for splitting", len(gaps), min_gap_duration)
+
+        if not gaps:
+            # No suitable gaps found, fall back to simple splitting
+            logger.warning("No suitable speech gaps found, using time-based splitting")
+            num_chunks = int(total_duration / target_chunk_duration) + 1
+            chunk_duration = total_duration / num_chunks
+
+            split_points = []
+            for i in range(num_chunks):
+                start = i * chunk_duration
+                end = min((i + 1) * chunk_duration, total_duration)
+                split_points.append((start, end))
+
+            return split_points
+
         split_points = []
         current_start = 0.0
+        gap_index = 0  # Sequential walking through gaps (O(n) instead of O(n²))
 
         # Calculate expected number of chunks for infinite loop protection
         expected_chunks = int(total_duration / target_chunk_duration) + 1
@@ -1141,29 +1310,35 @@ class Transcriber:
             # Target end time for this chunk
             target_end = min(current_start + target_chunk_duration, total_duration)
 
-            # Find the best split point near target_end
-            # Look in a window of ±30 seconds around target
+            # Find the best gap near target_end using sequential search
+            # Search window: ±30 seconds around target
             search_window_start = max(target_end - 30, current_start)
             search_window_end = min(target_end + 30, total_duration)
 
-            # Find gaps between speech segments in the search window
             best_split = target_end  # Default to target if no good gap found
-            min_gap_duration = 0.5  # Minimum gap duration to consider (seconds)
+            best_distance = float('inf')
 
-            for i in range(len(speech_segments) - 1):
-                gap_start = speech_segments[i][1]  # End of current segment
-                gap_end = speech_segments[i + 1][0]  # Start of next segment
-                gap_duration = gap_end - gap_start
+            # Skip gaps that are before our search window (sequential optimization)
+            while gap_index < len(gaps) and gaps[gap_index] < search_window_start:
+                gap_index += 1
 
-                # Check if this gap is in our search window and is long enough
-                if (search_window_start <= gap_start <= search_window_end and
-                    gap_duration >= min_gap_duration):
-                    # Use the middle of the gap as split point
-                    gap_middle = (gap_start + gap_end) / 2
+            # Find the best gap within the search window
+            temp_index = gap_index
+            while temp_index < len(gaps) and gaps[temp_index] <= search_window_end:
+                gap_pos = gaps[temp_index]
+                distance = abs(gap_pos - target_end)
 
-                    # Prefer gaps closer to the target
-                    if abs(gap_middle - target_end) < abs(best_split - target_end):
-                        best_split = gap_middle
+                if distance < best_distance:
+                    best_distance = distance
+                    best_split = gap_pos
+
+                temp_index += 1
+
+            # Apply padding to the split point to avoid cutting mid-syllable
+            if best_split != target_end:
+                # We found a gap - the padding is already implicit in gap_middle calculation
+                # But we can be more careful by checking we're not too close to speech
+                pass
 
             # Force progress if stuck at same position
             if best_split <= current_start:
@@ -1173,13 +1348,17 @@ class Transcriber:
                 )
                 best_split = target_end
 
-            # Add this chunk
-            split_points.append((current_start, best_split))
-            current_start = best_split
-
-            # Break if we're at the end
-            if current_start >= total_duration - 1.0:
+            # Check if this is the last chunk
+            # If best_split is very close to the end, extend it to total_duration
+            # to avoid leaving a tiny chunk at the end
+            if best_split >= total_duration - 1.0:
+                # This is the last chunk - extend to the very end
+                split_points.append((current_start, total_duration))
                 break
+            else:
+                # Normal chunk - add it and continue
+                split_points.append((current_start, best_split))
+                current_start = best_split
 
         # Check if we hit the iteration limit (should never happen in normal operation)
         if iteration >= max_iterations:

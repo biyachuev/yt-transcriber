@@ -32,6 +32,8 @@ from .text_reader import TextReader
 from .video_processor import VideoProcessor
 from .cost_tracker import get_cost_tracker
 from .api_cache import get_cache
+from .yt_dlp_updater import check_and_update_yt_dlp
+from .api_validator import validate_api_keys_for_operation
 
 
 def _print_session_summary():
@@ -91,122 +93,55 @@ YouTube Transcriber & Translator
 ================================
 
 Usage:
-    python -m src.main [OPTIONS]
+    python -m src.main <command> [options]
+
+Commands:
+    youtube         Process a YouTube video
+    audio           Process a local audio file
+    video           Process a local video file
+    text            Process a text document (.docx, .md, .txt)
+
+Run 'python -m src.main <command> --help' for command-specific options.
 
 Examples:
     # Transcribe and translate a YouTube video
-    python -m src.main --url "https://youtube.com/watch?v=..." --transcribe whisper_base --translate NLLB
+    python -m src.main youtube --url "https://youtube.com/watch?v=..." --transcribe whisper-base --translate nllb
 
-    # Transcribe only
-    python -m src.main --url "https://youtube.com/watch?v=..." --transcribe whisper_base
+    # Process a local audio file with refinement
+    python -m src.main audio --input audio.mp3 --transcribe whisper-medium --refine-model qwen2.5:3b
 
-    # Process a local audio file
-    python -m src.main --input_audio audio.mp3 --transcribe whisper_base --translate NLLB
+    # Process a video file
+    python -m src.main video --input video.mp4 --transcribe whisper-base --translate nllb
 
-    # Process a local video file (MP4, MKV, AVI, etc.)
-    python -m src.main --input_video video.mp4 --transcribe whisper_base --translate NLLB
+    # Translate an existing document
+    python -m src.main text --input document.docx --translate nllb
 
-    # Apply a custom Whisper prompt
-    python -m src.main --url "https://youtube.com/watch?v=..." --transcribe whisper_base --prompt prompt.txt
+    # Full pipeline with summarization
+    python -m src.main youtube --url "..." --transcribe whisper-medium --translate nllb \\
+        --refine-model qwen2.5:3b --summarize-model qwen2.5:7b
 
-    # Refine a transcript with a local LLM
-    python -m src.main --input_audio audio.mp3 --transcribe whisper_medium --refine-model llama3.2:3b
+Global Options:
+    --help, -h      Show this message
 
-    # Refine and translate (creates original, refined, translated documents)
-    python -m src.main --input_audio audio.mp3 --transcribe whisper_medium --translate NLLB --refine-model llama3.2:3b
-
-    # Transcribe, translate, refine translation, and summarize
-    python -m src.main --url "https://youtube.com/watch?v=..." --transcribe whisper_medium --translate NLLB --refine-translation qwen2.5:7b --summarize --summarize-model qwen2.5:7b
-
-Options:
-    --url URL                   YouTube video URL
-    --input_audio PATH          Path to an audio file (mp3, wav, etc.)
-    --input_video PATH          Path to a video file (mp4, mkv, avi, etc.)
-    --input_text PATH           Path to a text document (.docx, .md)
-
-    --transcribe METHOD         Transcription backend
-    --translate METHOD          Translation backend (comma separated list)
-
-    --prompt PATH               Custom Whisper prompt file
-                                Helps capture domain-specific names and terms
-                                For YouTube: generated automatically if omitted
-                                For audio files: recommended to supply manually
-
-    --refine-model MODEL        Model used to refine the transcript
-                                (e.g. qwen2.5:3b for Ollama, gpt-4 for OpenAI)
-
-    --refine-backend BACKEND    Backend for refinement: ollama (default) or openai_api
-
-    --refine-translation MODEL  Model used to polish translation output
-                                (e.g. qwen2.5:3b, llama3:8b). Produces more natural phrasing.
-
-    --summarize                 Generate a summary of the content
-
+Common Options (available for all commands):
+    --transcribe METHOD         Transcription method (whisper-base, whisper-small, whisper-medium, whisper-openai-api)
+    --translate METHOD          Translation method (nllb, openai-api)
+    --prompt-file PATH          Custom Whisper prompt file
+    --refine-model MODEL        Model for transcript refinement (e.g. qwen2.5:3b, gpt-4)
+    --refine-backend BACKEND    Backend for refinement (ollama, openai-api)
+    --refine-translation MODEL  Model for translation refinement
     --summarize-model MODEL     Model for summarization
-                                (e.g. qwen2.5:7b for Ollama, gpt-4 for OpenAI)
-
-    --summarize-backend BACKEND Backend for summarization: ollama (default) or openai_api
-
-    --speakers                  Enable speaker diarisation (experimental)
-
-    --translate-model MODEL     NLLB translation model.
-                                Default: facebook/nllb-200-distilled-1.3B
-                                Other options: facebook/nllb-200-distilled-600M (faster),
-                                facebook/nllb-200-3.3B (best quality, slowest)
-
-    --help, -h                  Show this message
-
-Available transcription methods:
-    - whisper_base              Fast local model
-    - whisper_small             Balanced local model
-    - whisper_medium            Best quality local model
-    - whisper_openai_api        OpenAI Whisper API (requires OPENAI_API_KEY)
-
-Available translation methods:
-    - NLLB                      Local NLLB inference
-    - openai_api                OpenAI GPT API (requires OPENAI_API_KEY)
-
-Available refinement backends:
-    - ollama (default)          Local LLM via Ollama
-    - openai_api                OpenAI GPT API (requires OPENAI_API_KEY)
-
-Available summarization backends:
-    - ollama (default)          Local LLM via Ollama
-    - openai_api                OpenAI GPT API (requires OPENAI_API_KEY)
-
-Custom Whisper prompts:
-    Prompts help Whisper recognise proper names, brands, and technical jargon.
-    Format: plain text file, comma-separated keywords. Example prompt.txt:
-        FIDE, Hikaru Nakamura, Magnus Carlsen, chess tournament, bongcloud
-
-Refinement with LLM (--refine-model):
-    After transcription, you can polish the text with a local LLM to:
-    - Fix terminology and proper nouns
-    - Improve punctuation
-    - Remove filler words
-    - Split text into paragraphs
-
-    Output files:
-    - Without --refine-model: name.docx, name.md
-    - With --refine-model: name_original.docx/md, name_refined.docx/md
-    - With --refine-model and --translate: name_translated.docx/md
-    - With --refine-translation: name_translated_refined.docx/md
-
-    Requirements:
-    1. Install Ollama: https://ollama.ai
-    2. Pull a model: ollama pull qwen2.5:3b
-    3. Start the server: ollama serve
-
-    Recommended models:
-    - llama3.2:3b   — fast, good quality
-    - qwen2.5:3b    — fast, excellent for Russian & English
-    - llama3:8b     — slower, higher quality
-    - mistral:7b    — balanced option
+    --summarize-backend BACKEND Backend for summarization (ollama, openai-api)
+    --nllb-model MODEL          NLLB model (default: facebook/nllb-200-distilled-1.3B)
+    --speakers                  Enable speaker diarization
 
 Notes:
     - Results are stored in 'output/' (.docx and .md)
-    - Temporary artefacts go to 'temp/'
+    - Temporary files go to 'temp/'
     - Logs are written to 'logs/'
+    - First run downloads models (~2-5 GB)
+    - YouTube processing automatically checks for yt-dlp updates before downloading
+      (keeps yt-dlp up-to-date to prevent HTTP 403 errors)
     """
     print(help_text)
 
@@ -280,6 +215,7 @@ def process_text_file(
     refine_model: Optional[str] = None,
     refine_translation_model: Optional[str] = None,
     translate_model: Optional[str] = None,
+    openai_translate_model: Optional[str] = None,
     refine_backend: str = "ollama",
     summarize: bool = False,
     summarize_model: Optional[str] = None,
@@ -374,10 +310,14 @@ def process_text_file(
             logger.info("\n  Translation method: %s", method)
             from .translator import Translator
 
-            translator = Translator(method=method, model_name=translate_model)
+            # Use appropriate model based on translation method
+            model_override = openai_translate_model if method == TranslateOptions.OPENAI_API else translate_model
+            translator = Translator(method=method, model_name=model_override)
             method_key = method
             if method == "NLLB":
                 method_key = f"{method} ({translator.model_name})"
+            elif method == TranslateOptions.OPENAI_API:
+                method_key = f"OpenAI API ({translator.model_name})"
             segments_to_translate = refined_segments if refined_segments else original_segments
 
             try:
@@ -503,56 +443,40 @@ def process_text_file(
 
 
 
-def validate_args(args) -> bool:
+def validate_args(command: str, args) -> bool:
     """
-    Validate CLI arguments.
+    Validate CLI arguments for a specific command.
 
     Args:
+        command: The subcommand being executed (youtube, audio, video, text).
         args: Parsed argparse namespace.
 
     Returns:
         True if validation succeeded.
     """
-    # Ensure only one input source is provided.
-    input_count = sum([
-        bool(args.url),
-        bool(args.input_audio),
-        bool(args.input_video),
-        bool(args.input_text)
-    ])
-
-    if input_count == 0:
-        logger.error("You must specify one input source: --url, --input_audio, --input_video, or --input_text")
-        return False
-
-    if input_count > 1:
-        logger.error("Only one input source may be specified at a time")
-        return False
-
-    # Audio/YouTube/Video sources require a transcription backend.
-    if (args.url or args.input_audio or args.input_video) and not args.transcribe:
-        logger.error("Audio/YouTube/Video processing requires --transcribe to be set")
-        return False
-
-
-    # Validate referenced files.
-    if args.input_audio:
-        if not Path(args.input_audio).exists():
-            logger.error("Audio file not found: %s", args.input_audio)
+    # Validate input file exists for file-based commands
+    if command == 'audio' and hasattr(args, 'input') and args.input:
+        if not Path(args.input).exists():
+            logger.error("Audio file not found: %s", args.input)
             return False
 
-    if args.input_video:
-        if not Path(args.input_video).exists():
-            logger.error("Video file not found: %s", args.input_video)
+    if command == 'video' and hasattr(args, 'input') and args.input:
+        if not Path(args.input).exists():
+            logger.error("Video file not found: %s", args.input)
             return False
 
-    if args.input_text:
-        if not Path(args.input_text).exists():
-            logger.error("Text file not found: %s", args.input_text)
+    if command == 'text' and hasattr(args, 'input') and args.input:
+        if not Path(args.input).exists():
+            logger.error("Text file not found: %s", args.input)
             return False
 
-    # Validate refinement parameters early (before expensive operations).
-    if args.refine_model:
+    # Audio/YouTube/Video sources require a transcription backend
+    if command in ['youtube', 'audio', 'video'] and not args.transcribe:
+        logger.error("%s command requires --transcribe to be set", command.capitalize())
+        return False
+
+    # Validate refinement parameters early (before expensive operations)
+    if hasattr(args, 'refine_model') and args.refine_model:
         if args.refine_backend == "openai_api":
             # Check OpenAI API key.
             if not settings.OPENAI_API_KEY:
@@ -620,7 +544,7 @@ def validate_args(args) -> bool:
             return False
 
     # Validate summarization parameters.
-    if args.summarize and args.summarize_model:
+    if hasattr(args, 'summarize_model') and args.summarize_model:
         if args.summarize_backend == "openai_api":
             if not settings.OPENAI_API_KEY:
                 logger.error("--summarize-backend openai_api requires OPENAI_API_KEY in environment")
@@ -653,19 +577,21 @@ def validate_args(args) -> bool:
                 logger.error("Cannot connect to Ollama server: %s", e)
                 return False
 
-    # Validate translation backend if specified.
-    if args.translate:
+    # Validate translation backend if specified
+    if hasattr(args, 'translate') and args.translate:
         translate_methods = [m.strip() for m in args.translate.split(',')]
 
         for method in translate_methods:
-            if method not in ["NLLB", "openai_api"]:
+            # Normalize method names (both nllb and NLLB are acceptable)
+            method_lower = method.lower()
+            if method_lower not in ["nllb", "openai_api", "openai-api"]:
                 logger.error("Unknown translation method: %s", method)
-                logger.error("Available methods: NLLB, openai_api")
+                logger.error("Available methods: nllb, openai-api")
                 return False
 
-            if method == "openai_api":
+            if method_lower in ["openai_api", "openai-api"]:
                 if not settings.OPENAI_API_KEY:
-                    logger.error("Translation method 'openai_api' requires OPENAI_API_KEY")
+                    logger.error("Translation method 'openai-api' requires OPENAI_API_KEY")
                     return False
 
                 try:
@@ -674,17 +600,19 @@ def validate_args(args) -> bool:
                     logger.error("OpenAI library not installed. Install it with: pip install openai>=1.6.0")
                     return False
 
-    # Validate transcription backend if specified.
-    if args.transcribe:
+    # Validate transcription backend if specified
+    if hasattr(args, 'transcribe') and args.transcribe:
+        # Normalize method names (accept both whisper_base and whisper-base)
+        method = args.transcribe.replace('-', '_')
         valid_transcribe_methods = ["whisper_base", "whisper_small", "whisper_medium", "whisper_openai_api"]
-        if args.transcribe not in valid_transcribe_methods:
+        if method not in valid_transcribe_methods:
             logger.error("Unknown transcription method: %s", args.transcribe)
-            logger.error("Available methods: %s", ', '.join(valid_transcribe_methods))
+            logger.error("Available methods: whisper-base, whisper-small, whisper-medium, whisper-openai-api")
             return False
 
-        if args.transcribe == "whisper_openai_api":
+        if method == "whisper_openai_api":
             if not settings.OPENAI_API_KEY:
-                logger.error("Transcription method 'whisper_openai_api' requires OPENAI_API_KEY")
+                logger.error("Transcription method 'whisper-openai-api' requires OPENAI_API_KEY")
                 return False
 
             try:
@@ -692,6 +620,29 @@ def validate_args(args) -> bool:
             except ImportError:
                 logger.error("OpenAI library not installed. Install it with: pip install openai>=1.6.0")
                 return False
+
+    # Validate API keys with actual API calls early
+    # Extract parameters from args
+    transcribe_method = getattr(args, 'transcribe', None)
+    if transcribe_method:
+        transcribe_method = transcribe_method.replace('-', '_')
+
+    translate_methods = None
+    if hasattr(args, 'translate') and args.translate:
+        translate_methods = [m.strip().replace('-', '_') for m in args.translate.split(',')]
+
+    refine_backend = getattr(args, 'refine_backend', None)
+    summarize_backend = getattr(args, 'summarize_backend', None)
+
+    # Validate all required API keys
+    if not validate_api_keys_for_operation(
+        transcribe_method=transcribe_method,
+        translate_methods=translate_methods,
+        refine_backend=refine_backend,
+        summarize_backend=summarize_backend
+    ):
+        logger.error("API key validation failed. Please fix the issues above before continuing.")
+        return False
 
     return True
 
@@ -705,6 +656,7 @@ def process_youtube_video(
     refine_model: Optional[str] = None,
     refine_translation_model: Optional[str] = None,
     translate_model: Optional[str] = None,
+    openai_translate_model: Optional[str] = None,
     refine_backend: str = "ollama",
     summarize: bool = False,
     summarize_model: Optional[str] = None,
@@ -830,10 +782,14 @@ def process_youtube_video(
         from .translator import Translator
 
         if source_lang == "en":
-            translator = Translator(method=translate_method, model_name=translate_model)
+            # Use appropriate model based on translation method
+            model_override = openai_translate_model if translate_method == TranslateOptions.OPENAI_API else translate_model
+            translator = Translator(method=translate_method, model_name=model_override)
 
             if translate_method == "NLLB":
                 translate_method_str = f"{translate_method} ({translator.model_name})"
+            elif translate_method == TranslateOptions.OPENAI_API:
+                translate_method_str = f"OpenAI API ({translator.model_name})"
 
             # Prefer translating the refined transcript when present.
             if refined_transcription_segments:
@@ -1047,6 +1003,7 @@ def process_local_video(
     refine_model: Optional[str] = None,
     refine_translation_model: Optional[str] = None,
     translate_model: Optional[str] = None,
+    openai_translate_model: Optional[str] = None,
     refine_backend: str = "ollama",
     summarize: bool = False,
     summarize_model: Optional[str] = None,
@@ -1154,10 +1111,14 @@ def process_local_video(
 
 
         if source_lang == "en":
-            translator = Translator(method=translate_method, model_name=translate_model)
+            # Use appropriate model based on translation method
+            model_override = openai_translate_model if translate_method == TranslateOptions.OPENAI_API else translate_model
+            translator = Translator(method=translate_method, model_name=model_override)
 
             if translate_method == "NLLB":
                 translate_method_str = f"{translate_method} ({translator.model_name})"
+            elif translate_method == TranslateOptions.OPENAI_API:
+                translate_method_str = f"OpenAI API ({translator.model_name})"
 
             # Translate the refined transcript when present.
             if refined_transcription_segments:
@@ -1368,6 +1329,7 @@ def process_local_audio(
     refine_model: Optional[str] = None,
     refine_translation_model: Optional[str] = None,
     translate_model: Optional[str] = None,
+    openai_translate_model: Optional[str] = None,
     refine_backend: str = "ollama",
     summarize: bool = False,
     summarize_model: Optional[str] = None,
@@ -1463,10 +1425,14 @@ def process_local_audio(
 
 
         if source_lang == "en":
-            translator = Translator(method=translate_method, model_name=translate_model)
+            # Use appropriate model based on translation method
+            model_override = openai_translate_model if translate_method == TranslateOptions.OPENAI_API else translate_model
+            translator = Translator(method=translate_method, model_name=model_override)
 
             if translate_method == "NLLB":
                 translate_method_str = f"{translate_method} ({translator.model_name})"
+            elif translate_method == TranslateOptions.OPENAI_API:
+                translate_method_str = f"OpenAI API ({translator.model_name})"
 
             # Translate the refined transcript when present.
             if refined_transcription_segments:
@@ -1668,6 +1634,18 @@ def process_local_audio(
     _print_session_summary()
 
 
+def normalize_method_names(args):
+    """Normalize method names to internal format (underscore-based)."""
+    if hasattr(args, 'transcribe') and args.transcribe:
+        args.transcribe = args.transcribe.replace('-', '_')
+    if hasattr(args, 'translate') and args.translate:
+        # Normalize each method in comma-separated list
+        methods = [m.strip().replace('-', '_').upper() if m.strip().lower() == 'nllb' else m.strip().replace('-', '_')
+                   for m in args.translate.split(',')]
+        args.translate = ','.join(methods)
+    return args
+
+
 def main():
     """Application entry point."""
     parser = argparse.ArgumentParser(
@@ -1675,114 +1653,187 @@ def main():
         add_help=False
     )
 
-    # Input sources.
-    parser.add_argument('--url', type=str, help='YouTube video URL')
-    parser.add_argument('--input_audio', type=str, help='Path to a local audio file')
-    parser.add_argument('--input_video', type=str, help='Path to a local video file')
-    parser.add_argument('--input_text', type=str, help='Path to a text document')
+    # Create subparsers for commands
+    subparsers = parser.add_subparsers(dest='command', help='Command to execute')
 
-    # Processing backends.
-    parser.add_argument('--transcribe', type=str, help='Transcription backend name')
-    parser.add_argument('--translate', type=str, help='Translation backends (comma separated)')
+    # Common arguments shared across commands
+    def add_common_args(subparser):
+        """Add common arguments to a subparser."""
+        subparser.add_argument('--transcribe', type=str,
+                               help='Transcription method (whisper-base, whisper-small, whisper-medium, whisper-openai-api)')
+        subparser.add_argument('--translate', type=str,
+                               help='Translation method (nllb, openai-api)')
+        subparser.add_argument('--prompt-file', type=str, dest='prompt_file',
+                               help='Path to a Whisper prompt file')
+        subparser.add_argument('--refine-model', type=str, dest='refine_model',
+                               help='Model for transcript refinement (e.g. qwen2.5:3b, gpt-4)')
+        subparser.add_argument('--refine-backend', type=str, dest='refine_backend',
+                               choices=['ollama', 'openai-api', 'openai_api'], default='ollama',
+                               help='Backend for refinement (ollama, openai-api)')
+        subparser.add_argument('--refine-translation', type=str, dest='refine_translation',
+                               help='Model for translation refinement')
+        subparser.add_argument('--summarize-model', type=str, dest='summarize_model',
+                               help='Model for summarization')
+        subparser.add_argument('--summarize-backend', type=str, dest='summarize_backend',
+                               choices=['ollama', 'openai-api', 'openai_api'], default='ollama',
+                               help='Backend for summarization (ollama, openai-api)')
+        subparser.add_argument('--nllb-model', type=str, dest='nllb_model',
+                               help='NLLB model (default: facebook/nllb-200-distilled-1.3B)')
+        subparser.add_argument('--openai-translate-model', type=str, dest='openai_translate_model',
+                               help='OpenAI translation model (default: gpt-4o-mini, options: gpt-4o, gpt-4, gpt-3.5-turbo)')
+        subparser.add_argument('--speakers', action='store_true',
+                               help='Enable speaker diarization')
 
-    # Additional options.
-    parser.add_argument('--prompt', type=str, help='Path to a Whisper prompt file')
-    parser.add_argument('--refine-model', type=str, help='Model used to refine the transcript (e.g. qwen2.5:3b for Ollama, gpt-4 for OpenAI)')
-    parser.add_argument('--refine-backend', type=str, choices=['ollama', 'openai_api'], default='ollama',
-                        help='Backend for refinement: ollama (default) or openai_api')
-    parser.add_argument('--refine-translation', type=str, help='Model used to refine the translation (e.g. qwen2.5:3b)')
-    parser.add_argument('--speakers', action='store_true', help='Enable speaker diarisation (experimental)')
-    parser.add_argument('--translate-model', type=str, help='NLLB model override (default: facebook/nllb-200-distilled-1.3B)')
+    # YouTube command
+    youtube_parser = subparsers.add_parser('youtube', help='Process a YouTube video')
+    youtube_parser.add_argument('--url', type=str, required=True, help='YouTube video URL')
+    add_common_args(youtube_parser)
 
-    # Summarization options.
-    parser.add_argument('--summarize', action='store_true', help='Generate a summary of the content')
-    parser.add_argument('--summarize-model', type=str, help='Model for summarization (e.g. qwen2.5:7b for Ollama, gpt-4 for OpenAI)')
-    parser.add_argument('--summarize-backend', type=str, choices=['ollama', 'openai_api'], default='ollama',
-                        help='Backend for summarization: ollama (default) or openai_api')
+    # Audio command
+    audio_parser = subparsers.add_parser('audio', help='Process a local audio file')
+    audio_parser.add_argument('--input', type=str, required=True, help='Path to audio file')
+    add_common_args(audio_parser)
 
-    parser.add_argument('--help', '-h', action='store_true', help='Show this help message')
+    # Video command
+    video_parser = subparsers.add_parser('video', help='Process a local video file')
+    video_parser.add_argument('--input', type=str, required=True, help='Path to video file')
+    add_common_args(video_parser)
 
+    # Text command
+    text_parser = subparsers.add_parser('text', help='Process a text document')
+    text_parser.add_argument('--input', type=str, required=True, help='Path to text file (.docx, .md, .txt)')
+    text_parser.add_argument('--translate', type=str, help='Translation method (nllb, openai-api)')
+    text_parser.add_argument('--refine-model', type=str, dest='refine_model',
+                             help='Model for text refinement')
+    text_parser.add_argument('--refine-backend', type=str, dest='refine_backend',
+                             choices=['ollama', 'openai-api', 'openai_api'], default='ollama',
+                             help='Backend for refinement')
+    text_parser.add_argument('--refine-translation', type=str, dest='refine_translation',
+                             help='Model for translation refinement')
+    text_parser.add_argument('--summarize-model', type=str, dest='summarize_model',
+                             help='Model for summarization')
+    text_parser.add_argument('--summarize-backend', type=str, dest='summarize_backend',
+                             choices=['ollama', 'openai-api', 'openai_api'], default='ollama',
+                             help='Backend for summarization')
+    text_parser.add_argument('--nllb-model', type=str, dest='nllb_model',
+                             help='NLLB model override')
+    text_parser.add_argument('--openai-translate-model', type=str, dest='openai_translate_model',
+                             help='OpenAI translation model (default: gpt-4o-mini, options: gpt-4o, gpt-4, gpt-3.5-turbo)')
+
+    # Global help
+    parser.add_argument('--help', '-h', action='store_true', help='Show help message')
+
+    # Parse arguments
     args = parser.parse_args()
 
-    # Show help when explicitly requested or no arguments were provided.
-    if args.help or len(sys.argv) == 1:
+    # Show help when explicitly requested or no command provided
+    if args.help or not args.command:
         print_help()
         sys.exit(0)
 
-    # Validate arguments.
-    if not validate_args(args):
+    # Normalize method names (convert dashes to underscores for internal use)
+    args = normalize_method_names(args)
+
+    # Normalize backend names
+    if hasattr(args, 'refine_backend'):
+        args.refine_backend = args.refine_backend.replace('-', '_')
+    if hasattr(args, 'summarize_backend'):
+        args.summarize_backend = args.summarize_backend.replace('-', '_')
+
+    # Validate arguments
+    if not validate_args(args.command, args):
         sys.exit(1)
 
+    # Check and update yt-dlp before processing YouTube videos
+    if args.command == 'youtube':
+        logger.info("=" * 60)
+        logger.info("Checking yt-dlp version...")
+        logger.info("=" * 60)
+        check_and_update_yt_dlp()
+        logger.info("=" * 60)
+
     try:
-        # Parse translation methods.
+        # Parse translation methods
         translate_methods = None
-        if args.translate:
+        if hasattr(args, 'translate') and args.translate:
             translate_methods = [m.strip() for m in args.translate.split(',')]
 
-        # Load a custom prompt if supplied.
+        # Load a custom prompt if supplied
         custom_prompt = None
-        if args.prompt:
-            custom_prompt = load_prompt_from_file(args.prompt)
+        if hasattr(args, 'prompt_file') and args.prompt_file:
+            custom_prompt = load_prompt_from_file(args.prompt_file)
 
-        # Dispatch based on the selected input source.
-        if args.url:
+        # Determine if summarization is requested (model presence implies request)
+        summarize = bool(getattr(args, 'summarize_model', None))
+
+        # Get NLLB model override
+        nllb_model = getattr(args, 'nllb_model', None)
+
+        # Get OpenAI translate model override
+        openai_translate_model = getattr(args, 'openai_translate_model', None)
+
+        # Dispatch based on command
+        if args.command == 'youtube':
             process_youtube_video(
                 url=args.url,
                 transcribe_method=args.transcribe,
                 translate_methods=translate_methods,
-                with_speakers=args.speakers,
+                with_speakers=getattr(args, 'speakers', False),
                 custom_prompt=custom_prompt,
-                refine_model=args.refine_model,
-                refine_translation_model=args.refine_translation,
-                translate_model=args.translate_model,
-                refine_backend=args.refine_backend,
-                summarize=args.summarize,
-                summarize_model=args.summarize_model,
-                summarize_backend=args.summarize_backend
+                refine_model=getattr(args, 'refine_model', None),
+                refine_translation_model=getattr(args, 'refine_translation', None),
+                translate_model=nllb_model,
+                openai_translate_model=openai_translate_model,
+                refine_backend=getattr(args, 'refine_backend', 'ollama'),
+                summarize=summarize,
+                summarize_model=getattr(args, 'summarize_model', None),
+                summarize_backend=getattr(args, 'summarize_backend', 'ollama')
             )
-        elif args.input_audio:
+        elif args.command == 'audio':
             process_local_audio(
-                audio_path=args.input_audio,
+                audio_path=args.input,
                 transcribe_method=args.transcribe,
                 translate_methods=translate_methods,
-                with_speakers=args.speakers,
+                with_speakers=getattr(args, 'speakers', False),
                 custom_prompt=custom_prompt,
-                refine_model=args.refine_model,
-                refine_translation_model=args.refine_translation,
-                translate_model=args.translate_model,
-                refine_backend=args.refine_backend,
-                summarize=args.summarize,
-                summarize_model=args.summarize_model,
-                summarize_backend=args.summarize_backend
+                refine_model=getattr(args, 'refine_model', None),
+                refine_translation_model=getattr(args, 'refine_translation', None),
+                translate_model=nllb_model,
+                openai_translate_model=openai_translate_model,
+                refine_backend=getattr(args, 'refine_backend', 'ollama'),
+                summarize=summarize,
+                summarize_model=getattr(args, 'summarize_model', None),
+                summarize_backend=getattr(args, 'summarize_backend', 'ollama')
             )
-        elif args.input_video:
+        elif args.command == 'video':
             process_local_video(
-                video_path=args.input_video,
+                video_path=args.input,
                 transcribe_method=args.transcribe,
                 translate_methods=translate_methods,
-                with_speakers=args.speakers,
+                with_speakers=getattr(args, 'speakers', False),
                 custom_prompt=custom_prompt,
-                refine_model=args.refine_model,
-                refine_translation_model=args.refine_translation,
-                translate_model=args.translate_model,
-                refine_backend=args.refine_backend,
-                summarize=args.summarize,
-                summarize_model=args.summarize_model,
-                summarize_backend=args.summarize_backend
+                refine_model=getattr(args, 'refine_model', None),
+                refine_translation_model=getattr(args, 'refine_translation', None),
+                translate_model=nllb_model,
+                openai_translate_model=openai_translate_model,
+                refine_backend=getattr(args, 'refine_backend', 'ollama'),
+                summarize=summarize,
+                summarize_model=getattr(args, 'summarize_model', None),
+                summarize_backend=getattr(args, 'summarize_backend', 'ollama')
             )
-        elif args.input_text:
+        elif args.command == 'text':
             process_text_file(
-                text_path=args.input_text,
+                text_path=args.input,
                 translate_methods=translate_methods,
-                refine_model=args.refine_model,
-                refine_translation_model=args.refine_translation,
-                translate_model=args.translate_model,
-                refine_backend=args.refine_backend,
-                summarize=args.summarize,
-                summarize_model=args.summarize_model,
-                summarize_backend=args.summarize_backend
+                refine_model=getattr(args, 'refine_model', None),
+                refine_translation_model=getattr(args, 'refine_translation', None),
+                translate_model=nllb_model,
+                openai_translate_model=openai_translate_model,
+                refine_backend=getattr(args, 'refine_backend', 'ollama'),
+                summarize=summarize,
+                summarize_model=getattr(args, 'summarize_model', None),
+                summarize_backend=getattr(args, 'summarize_backend', 'ollama')
             )
-
 
     except KeyboardInterrupt:
         logger.info("\nProcessing interrupted by user")

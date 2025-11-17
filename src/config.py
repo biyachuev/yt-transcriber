@@ -20,7 +20,10 @@ class Settings(BaseSettings):
     
     # API keys.
     OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
-    
+
+    # OpenAI Translation configuration.
+    OPENAI_TRANSLATION_MODEL: str = Field(default="gpt-4o-mini", env="OPENAI_TRANSLATION_MODEL")
+
     # Whisper configuration.
     WHISPER_MODEL_DIR: Path = BASE_DIR / "models" / "whisper"
     WHISPER_DEVICE: str = "cpu"  # "cpu", "cuda", or "mps"

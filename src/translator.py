@@ -19,7 +19,12 @@ class Translator:
 
     def __init__(self, method: str = TranslateOptions.NLLB, model_name: Optional[str] = None, use_cache: bool = True):
         self.method = method
-        self.model_name = model_name if model_name else settings.NLLB_MODEL_NAME
+        # For NLLB, use model_name or default NLLB model
+        # For OpenAI, use model_name or default OpenAI translation model
+        if method == TranslateOptions.OPENAI_API:
+            self.model_name = model_name if model_name else settings.OPENAI_TRANSLATION_MODEL
+        else:
+            self.model_name = model_name if model_name else settings.NLLB_MODEL_NAME
         self.model = None
         self.tokenizer = None
         self.pipeline = None
@@ -28,7 +33,9 @@ class Translator:
         self.cache = get_cache() if use_cache else None
         self.rate_limiter = get_openai_rate_limiter() if method == TranslateOptions.OPENAI_API else None
         logger.info("Translator using device: %s", self.device)
-        if model_name:
+        if method == TranslateOptions.OPENAI_API:
+            logger.info("OpenAI translation model: %s", self.model_name)
+        elif model_name:
             logger.info("Custom NLLB model specified: %s", model_name)
         if use_cache:
             logger.info("Translation caching enabled")
@@ -203,12 +210,12 @@ class Translator:
                 "text": text,
                 "source_lang": source_lang,
                 "target_lang": target_lang,
-                "model": "gpt-4",
+                "model": self.model_name,
                 "method": "openai_translation"
             }
             cached_result = self.cache.get("translation", cache_key)
             if cached_result is not None:
-                logger.info("Using cached translation")
+                logger.info("Using cached translation (model: %s)", self.model_name)
                 return cached_result
 
         try:
@@ -291,7 +298,7 @@ IMPORTANT RULES:
                 self.rate_limiter.wait_if_needed()
 
             response = client.chat.completions.create(
-                model="gpt-4",  # Can be configured
+                model=self.model_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": chunk}
@@ -305,7 +312,8 @@ IMPORTANT RULES:
                 cost_tracker = get_cost_tracker()
                 cost_tracker.add_translation(
                     response.usage.prompt_tokens,
-                    response.usage.completion_tokens
+                    response.usage.completion_tokens,
+                    model=self.model_name
                 )
 
             return response.choices[0].message.content.strip()

@@ -264,7 +264,8 @@ class TextRefiner:
                 cost_tracker = get_cost_tracker()
                 cost_tracker.add_refinement(
                     response.usage.prompt_tokens,
-                    response.usage.completion_tokens
+                    response.usage.completion_tokens,
+                    model=self.model_name
                 )
 
             # Cache the result

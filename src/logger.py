@@ -20,6 +20,7 @@ class ColoredFormatter(logging.Formatter):
         'CRITICAL': '\033[1;31m', # Bold Red
     }
     RESET = '\033[0m'
+    ORANGE = '\033[38;5;208m'  # Bright orange for cost values
 
     def format(self, record):
         """Format log record with color for terminal output."""
@@ -76,6 +77,19 @@ def setup_logger(name: str = "yt") -> logging.Logger:
     logger.addHandler(file_handler)
 
     return logger
+
+
+def format_orange(text: str) -> str:
+    """
+    Format text with orange color for terminal output.
+
+    Args:
+        text: Text to format
+
+    Returns:
+        Formatted text with ANSI color codes
+    """
+    return f"\033[38;5;208m{text}\033[0m"
 
 
 # Global logger instance.

@@ -53,7 +53,9 @@ pip install -r requirements.txt
 ### Smoke test
 
 ```bash
-python -m src.main     --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ"     --transcribe whisper_base
+python -m src.main youtube \
+    --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" \
+    --transcribe whisper-base
 ```
 
 What happens:
@@ -68,7 +70,10 @@ What happens:
 ### Add translation
 
 ```bash
-python -m src.main     --url "https://www.youtube.com/watch?v=YOUR_VIDEO"     --transcribe whisper_base     --translate NLLB
+python -m src.main youtube \
+    --url "https://www.youtube.com/watch?v=YOUR_VIDEO" \
+    --transcribe whisper-base \
+    --translate nllb
 ```
 
 Output:
@@ -87,16 +92,27 @@ Both contain:
 ### Show help
 ```bash
 python -m src.main --help
+python -m src.main youtube --help
 ```
 
 ### Transcribe only
 ```bash
-python -m src.main --url "URL" --transcribe whisper_base
+python -m src.main youtube --url "URL" --transcribe whisper-base
 ```
 
 ### Transcribe + translate
 ```bash
-python -m src.main --url "URL" --transcribe whisper_base --translate NLLB
+python -m src.main youtube --url "URL" --transcribe whisper-base --translate nllb
+```
+
+### Process audio file
+```bash
+python -m src.main audio --input audio.mp3 --transcribe whisper-base --translate nllb
+```
+
+### Process video file
+```bash
+python -m src.main video --input video.mp4 --transcribe whisper-medium
 ```
 
 ---
@@ -118,7 +134,10 @@ yt-transcriber/
 
 ### Scenario 1: English lecture
 ```bash
-python -m src.main     --url "https://youtube.com/watch?v=..."     --transcribe whisper_base     --translate NLLB
+python -m src.main youtube \
+    --url "https://youtube.com/watch?v=..." \
+    --transcribe whisper-base \
+    --translate nllb
 ```
 Result: transcript + Russian translation
 
@@ -126,7 +145,9 @@ Result: transcript + Russian translation
 
 ### Scenario 2: Russian video
 ```bash
-python -m src.main     --url "https://youtube.com/watch?v=..."     --transcribe whisper_base
+python -m src.main youtube \
+    --url "https://youtube.com/watch?v=..." \
+    --transcribe whisper-base
 ```
 Result: transcript only
 
@@ -139,9 +160,9 @@ Create `process_videos.sh`:
 ```bash
 #!/bin/bash
 
-python -m src.main --url "https://youtube.com/watch?v=VIDEO1" --transcribe whisper_base --translate NLLB
-python -m src.main --url "https://youtube.com/watch?v=VIDEO2" --transcribe whisper_base --translate NLLB
-python -m src.main --url "https://youtube.com/watch?v=VIDEO3" --transcribe whisper_base --translate NLLB
+python -m src.main youtube --url "https://youtube.com/watch?v=VIDEO1" --transcribe whisper-base --translate nllb
+python -m src.main youtube --url "https://youtube.com/watch?v=VIDEO2" --transcribe whisper-base --translate nllb
+python -m src.main youtube --url "https://youtube.com/watch?v=VIDEO3" --transcribe whisper-base --translate nllb
 
 echo "Done!"
 ```

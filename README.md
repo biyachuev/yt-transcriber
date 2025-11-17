@@ -4,7 +4,25 @@ A flexible toolkit for transcribing and translating YouTube videos, audio files,
 
 ## 🎯 Highlights
 
-### Version 1.5 (current)
+### Version 1.6 (current)
+- ✅ **Early API Key Validation**
+  - Validates OpenAI API keys at startup with test API call
+  - Fails fast before expensive operations (downloads, processing)
+  - Clear error messages for invalid or missing keys
+  - Saves time and bandwidth by catching errors early
+- ✅ **VAD Performance Optimizations**
+  - Lightweight Silero VAD for speech boundary detection (1.8MB model)
+  - O(n²) → O(n) complexity reduction in boundary search
+  - Gap quality filtering (300ms minimum) to prevent mid-syllable cuts
+  - Accurate bitrate detection for optimal chunk sizing
+  - No HuggingFace token required for basic chunking
+  - 10-100x faster VAD processing for large files
+- ✅ **Automatic yt-dlp Updates**
+  - Automatic version checking before YouTube downloads
+  - Auto-updates yt-dlp to prevent HTTP 403 errors
+  - Keeps up with YouTube API changes
+
+### Version 1.5
 - ✅ **Speaker Diarization**
   - Automatic speaker identification using pyannote.audio
   - Speaker labels in transcripts ([SPEAKER_00], [SPEAKER_01], etc.)
@@ -160,25 +178,34 @@ LOG_LEVEL=INFO
 #### 1. Transcribe a YouTube video
 
 ```bash
-python -m src.main --url "https://youtube.com/watch?v=dQw4w9WgXcQ" --transcribe whisper_base
+python -m src.main youtube --url "https://youtube.com/watch?v=dQw4w9WgXcQ" --transcribe whisper-base
 ```
 
 #### 2. Transcribe and translate
 
 ```bash
-python -m src.main     --url "https://youtube.com/watch?v=dQw4w9WgXcQ"     --transcribe whisper_base     --translate NLLB
+python -m src.main youtube \
+    --url "https://youtube.com/watch?v=dQw4w9WgXcQ" \
+    --transcribe whisper-base \
+    --translate nllb
 ```
 
 #### 3. Process a local audio file
 
 ```bash
-python -m src.main     --input_audio audio.mp3     --transcribe whisper_medium     --translate NLLB
+python -m src.main audio \
+    --input audio.mp3 \
+    --transcribe whisper-medium \
+    --translate nllb
 ```
 
 #### 4. Process a local video file
 
 ```bash
-python -m src.main     --input_video video.mp4     --transcribe whisper_medium     --translate NLLB
+python -m src.main video \
+    --input video.mp4 \
+    --transcribe whisper-medium \
+    --translate nllb
 ```
 
 Supported video formats: MP4, MKV, AVI, MOV, and any format supported by FFmpeg.
@@ -186,12 +213,16 @@ Supported video formats: MP4, MKV, AVI, MOV, and any format supported by FFmpeg.
 #### 5. Refine a transcript with an LLM
 
 ```bash
-python -m src.main     --input_audio audio.mp3     --transcribe whisper_medium     --refine-model qwen2.5:7b     --translate NLLB
+python -m src.main audio \
+    --input audio.mp3 \
+    --transcribe whisper-medium \
+    --refine-model qwen2.5:7b \
+    --translate nllb
 ```
 
 Produces two documents:
-- `audio (original).docx/md` — raw transcript without translation
-- `audio (refined).docx/md` — polished transcript with translation
+- `audio_original.docx/md` — raw transcript without translation
+- `audio_refined.docx/md` — polished transcript with translation
 
 #### 6. Use a custom Whisper prompt
 
@@ -199,16 +230,19 @@ Produces two documents:
 # Create prompt.txt with project-specific terms
 # FIDE, Hikaru Nakamura, Magnus Carlsen, chess tournament
 
-python -m src.main     --url "https://youtube.com/watch?v=YOUR_VIDEO_ID"     --transcribe whisper_base     --prompt prompt.txt
+python -m src.main youtube \
+    --url "https://youtube.com/watch?v=YOUR_VIDEO_ID" \
+    --transcribe whisper-base \
+    --prompt-file prompt.txt
 ```
 
 #### 7. Enable speaker diarization (v1.5)
 
 ```bash
 # Transcribe with automatic speaker identification
-python -m src.main \
+python -m src.main youtube \
     --url "https://youtube.com/watch?v=YOUR_VIDEO_ID" \
-    --transcribe whisper_medium \
+    --transcribe whisper-medium \
     --speakers
 ```
 
@@ -233,61 +267,75 @@ Output will include speaker labels:
 - Output documents and logs may contain fragments of the original content. Store them locally and review licences before sharing.
 - The default translation model `facebook/nllb-200-distilled-1.3B` is released under CC BY-NC 4.0 (non-commercial). Use a different model or obtain a licence for commercial scenarios.
 
-#### 7. Process existing documents (v1.2)
+#### 8. Process existing documents (v1.2)
 
 ```bash
 # Improve an existing transcript
-python -m src.main     --input_text output/document.md     --refine-model qwen2.5:7b
+python -m src.main text --input output/document.md --refine-model qwen2.5:7b
 
 # Translate a document
-python -m src.main     --input_text transcription.docx     --translate NLLB
+python -m src.main text --input transcription.docx --translate nllb
 
 # Refine and translate
-python -m src.main     --input_text document.txt     --refine-model qwen2.5:7b     --translate NLLB
+python -m src.main text --input document.txt --refine-model qwen2.5:7b --translate nllb
 ```
 
 Supported formats: `.md`, `.docx`, `.txt`
 
-#### 8. Help screen
+#### 9. Help screen
 
 ```bash
 python -m src.main --help
+python -m src.main youtube --help
+python -m src.main audio --help
 ```
 
-### CLI arguments
+### CLI structure
 
-| Argument | Description | Example |
-|----------|-------------|---------|
-| `--url` | YouTube video URL | `--url "https://youtube.com/..."` |
-| `--input_audio` | Path to an audio file (mp3, wav, …) | `--input_audio audio.mp3` |
-| `--input_video` | Path to a video file (mp4, mkv, avi, …) | `--input_video video.mp4` |
-| `--input_text` | Path to a text document (.docx, .md, .txt) | `--input_text doc.docx` |
-| `--transcribe` | Transcription backend | `--transcribe whisper_medium` |
-| `--translate` | Translation backend | `--translate NLLB` |
-| `--refine-model` | Ollama model for refinement | `--refine-model qwen2.5:7b` |
-| `--prompt` | Custom Whisper prompt file | `--prompt prompt.txt` |
-| `--speakers` | Enable speaker diarisation (experimental) | `--speakers` |
+```bash
+python -m src.main <command> [options]
+```
+
+**Commands:**
+- `youtube` — Process a YouTube video
+- `audio` — Process a local audio file
+- `video` — Process a local video file
+- `text` — Process a text document
+
+### Common options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--transcribe` | Transcription method | `--transcribe whisper-base` |
+| `--translate` | Translation method | `--translate nllb` |
+| `--refine-model` | Model for refinement | `--refine-model qwen2.5:7b` |
+| `--refine-backend` | Refinement backend | `--refine-backend ollama` |
+| `--prompt-file` | Custom Whisper prompt file | `--prompt-file prompt.txt` |
+| `--nllb-model` | NLLB model override | `--nllb-model facebook/nllb-200-distilled-600M` |
+| `--speakers` | Enable speaker diarization | `--speakers` |
+| `--summarize-model` | Model for summarization | `--summarize-model qwen2.5:7b` |
 | `--help` | Show help | `--help` |
 
 ### Available methods
 
 **Transcription**
-- `whisper_base` — fast, good quality
-- `whisper_small` — slower, higher quality
-- `whisper_medium` — slowest, best quality
-- `whisper_openai_api` — OpenAI Whisper (coming soon)
+- `whisper-base` — fast, good quality
+- `whisper-small` — slower, higher quality
+- `whisper-medium` — slowest, best quality
+- `whisper-openai-api` — OpenAI Whisper API (requires OPENAI_API_KEY)
 
-**Refinement (requires Ollama)**
+**Refinement (requires Ollama or OpenAI API)**
 - `qwen2.5:3b` — fast, 3 GB (recommended)
 - `qwen2.5:7b` — slower, better quality
 - `llama3.2:3b` — fast, solid quality
 - `llama3:8b` — slower, higher quality
 - `mistral:7b` — balanced
+- `gpt-4o-mini` — OpenAI (requires API key)
 - Any other model available in the [Ollama library](https://ollama.com/library)
 
 **Translation**
-- `NLLB` — Meta NLLB (local, free)
-- `openai_api` — OpenAI API (coming soon)
+- `nllb` — Meta NLLB (local, free)
+- `openai-api` — OpenAI GPT API (requires OPENAI_API_KEY)
 
 ## 📁 Project structure
 
@@ -388,7 +436,30 @@ python -m src.main --url "..." --transcribe whisper_base
 **Safe to ignore:** Speaker diarization warnings
 - `UserWarning: torchcodec is not installed correctly` — Audio loading uses soundfile/librosa fallback (works correctly)
 - `UserWarning: std(): degrees of freedom is <= 0` — Internal pyannote calculation (does not affect results)
+- `UserWarning: Lightning automatically upgraded your loaded checkpoint` — PyTorch Lightning version compatibility (does not affect results)
 - See [FAQ.md](FAQ.md) for detailed explanations
+
+### VAD Performance Optimization
+
+The tool now uses **Silero VAD** by default for speech boundary detection when splitting large audio files. Silero VAD offers:
+- **Faster processing**: ~1ms per 30ms chunk (CPU-based)
+- **Smaller footprint**: 1.8MB model vs pyannote's full diarization stack
+- **No HuggingFace token required** for basic VAD functionality
+- **Automatic fallback** to pyannote VAD if Silero is unavailable
+
+**For optimal performance:**
+1. Silero VAD is used automatically (no setup needed)
+2. PyAnnote VAD is still available for speaker diarization (`--speakers` flag)
+3. To eliminate PyTorch Lightning warnings from pyannote, upgrade checkpoints once:
+   ```bash
+   python -c "from lightning.pytorch.cli import LightningCLI; LightningCLI(run=False)"
+   ```
+
+**Performance improvements in v1.6:**
+- ✅ O(n²) → O(n) complexity in boundary search
+- ✅ Gap quality filtering (300ms minimum, prevents mid-syllable cuts)
+- ✅ Accurate bitrate detection for chunk size estimation
+- ✅ Lightweight Silero VAD by default
 
 ## 🧪 Testing
 
