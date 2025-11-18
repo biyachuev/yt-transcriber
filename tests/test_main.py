@@ -105,8 +105,10 @@ class TestProcessTextFile:
         process_text_file("/nonexistent/file.txt")
         mock_reader.read_file.assert_called_once()
 
+    @patch('src.translator.Translator')
+    @patch('src.main.DocumentWriter')
     @patch('src.main.TextReader')
-    def test_process_text_file_with_translation(self, mock_reader_class, temp_dir):
+    def test_process_text_file_with_translation(self, mock_reader_class, mock_writer_class, mock_translator_class, temp_dir):
         """Test text file processing with translation"""
         # Mock TextReader
         mock_reader = MagicMock()
@@ -114,22 +116,33 @@ class TestProcessTextFile:
         mock_reader.detect_language.return_value = 'en'
         mock_reader_class.return_value = mock_reader
 
+        # Mock Translator
+        mock_translator = MagicMock()
+        mock_translator.model_name = "test-model"
+        mock_translator.translate_segments.return_value = []
+        mock_translator_class.return_value = mock_translator
+
+        # Mock DocumentWriter
+        mock_writer = MagicMock()
+        mock_writer.create_from_segments.return_value = ("doc.docx", "doc.md")
+        mock_writer_class.return_value = mock_writer
+
         # Create test file
         test_file = temp_dir / "test.txt"
         test_file.write_text("Test content")
 
-        # Process with translation - will fail when trying to load Translator
-        # but we verify reader is called
-        try:
-            process_text_file(str(test_file), translate_methods=['NLLB'])
-        except:
-            pass
+        # Process with translation
+        process_text_file(str(test_file), translate_methods=['NLLB'])
 
         # Verify reader was called
         mock_reader.read_file.assert_called_once_with(str(test_file))
+        # Verify translator was created
+        mock_translator_class.assert_called_once()
 
+    @patch('src.text_refiner.TextRefiner')
+    @patch('src.main.DocumentWriter')
     @patch('src.main.TextReader')
-    def test_process_text_file_with_refine(self, mock_reader_class, temp_dir):
+    def test_process_text_file_with_refine(self, mock_reader_class, mock_writer_class, mock_refiner_class, temp_dir):
         """Test text file processing with refinement"""
         # Mock TextReader
         mock_reader = MagicMock()
@@ -137,19 +150,27 @@ class TestProcessTextFile:
         mock_reader.detect_language.return_value = 'en'
         mock_reader_class.return_value = mock_reader
 
+        # Mock TextRefiner
+        mock_refiner = MagicMock()
+        mock_refiner.refine_text.return_value = "Refined test content"
+        mock_refiner_class.return_value = mock_refiner
+
+        # Mock DocumentWriter
+        mock_writer = MagicMock()
+        mock_writer.create_from_segments.return_value = ("doc.docx", "doc.md")
+        mock_writer_class.return_value = mock_writer
+
         # Create test file
         test_file = temp_dir / "test.txt"
         test_file.write_text("Test content")
 
-        # Process with refinement - will fail when trying to load TextRefiner
-        # but we verify reader is called
-        try:
-            process_text_file(str(test_file), refine_model='qwen2.5:3b')
-        except:
-            pass
+        # Process with refinement
+        process_text_file(str(test_file), refine_model='qwen2.5:3b')
 
         # Verify reader was called
         mock_reader.read_file.assert_called_once_with(str(test_file))
+        # Verify refiner was created
+        mock_refiner_class.assert_called_once()
 
 
 class TestEdgeCases:
