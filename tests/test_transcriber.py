@@ -1,6 +1,7 @@
 """
 Tests for the transcriber module.
 """
+
 import pytest
 from unittest.mock import patch, MagicMock
 from src.transcriber import TranscriptionSegment, Transcriber
@@ -9,62 +10,47 @@ from src.config import TranscribeOptions
 
 class TestTranscriptionSegment:
     """Unit tests covering TranscriptionSegment behaviour."""
-    
+
     def test_segment_creation(self):
         """Ensure the segment stores basic attributes."""
-        segment = TranscriptionSegment(
-            start=10.5,
-            end=15.3,
-            text="Test text"
-        )
-        
+        segment = TranscriptionSegment(start=10.5, end=15.3, text="Test text")
+
         assert segment.start == 10.5
         assert segment.end == 15.3
         assert segment.text == "Test text"
         assert segment.speaker is None
-    
+
     def test_segment_with_speaker(self):
         """Ensure speaker information is preserved."""
         segment = TranscriptionSegment(
-            start=0,
-            end=5,
-            text="Hello",
-            speaker="Speaker 1"
+            start=0, end=5, text="Hello", speaker="Speaker 1"
         )
-        
+
         assert segment.speaker == "Speaker 1"
-    
+
     def test_segment_strips_text(self):
         """Leading and trailing whitespace should be removed."""
-        segment = TranscriptionSegment(
-            start=0,
-            end=5,
-            text="  Text with spaces  "
-        )
-        
+        segment = TranscriptionSegment(start=0, end=5, text="  Text with spaces  ")
+
         assert segment.text == "Text with spaces"
-    
+
     def test_segment_to_dict(self):
         """Dictionary representation contains expected keys."""
-        segment = TranscriptionSegment(
-            start=65,
-            end=70,
-            text="Test"
-        )
-        
+        segment = TranscriptionSegment(start=65, end=70, text="Test")
+
         result = segment.to_dict()
-        assert 'start' in result
-        assert 'end' in result
-        assert 'text' in result
-        assert 'timestamp' in result
-        assert result['timestamp'] == "01:05"
+        assert "start" in result
+        assert "end" in result
+        assert "text" in result
+        assert "timestamp" in result
+        assert result["timestamp"] == "01:05"
 
 
 class TestTranscriber:
     """Unit tests covering the Transcriber helper."""
 
-    @patch('src.transcriber.torch')
-    @patch('src.transcriber.whisper')
+    @patch("src.transcriber.torch")
+    @patch("src.transcriber.whisper")
     def test_transcriber_initialization(self, mock_whisper, mock_torch):
         """Ensure device selection and lazy model loading."""
         mock_torch.cuda.is_available.return_value = False
@@ -74,10 +60,10 @@ class TestTranscriber:
 
         assert transcriber.method == TranscribeOptions.WHISPER_BASE
         assert transcriber.model is None  # model loads lazily
-        assert transcriber.device in ['cpu', 'cuda', 'mps']
+        assert transcriber.device in ["cpu", "cuda", "mps"]
 
-    @patch('src.transcriber.torch')
-    @patch('src.transcriber.whisper')
+    @patch("src.transcriber.torch")
+    @patch("src.transcriber.whisper")
     def test_segments_to_text(self, mock_whisper, mock_torch):
         """Join segments into a single text block."""
         mock_torch.cuda.is_available.return_value = False
@@ -88,7 +74,7 @@ class TestTranscriber:
         segments = [
             TranscriptionSegment(0, 5, "First segment"),
             TranscriptionSegment(5, 10, "Second segment"),
-            TranscriptionSegment(10, 15, "Third segment")
+            TranscriptionSegment(10, 15, "Third segment"),
         ]
 
         result = transcriber.segments_to_text(segments)
@@ -98,8 +84,8 @@ class TestTranscriber:
         assert "Third segment" in result
         assert result.count("\n\n") == 2  # two separators between three segments
 
-    @patch('src.transcriber.torch')
-    @patch('src.transcriber.whisper')
+    @patch("src.transcriber.torch")
+    @patch("src.transcriber.whisper")
     def test_segments_to_text_with_timestamps(self, mock_whisper, mock_torch):
         """Ensure timestamps are added when requested."""
         mock_torch.cuda.is_available.return_value = False
@@ -109,7 +95,7 @@ class TestTranscriber:
 
         segments = [
             TranscriptionSegment(0, 5, "First"),
-            TranscriptionSegment(65, 70, "Second")
+            TranscriptionSegment(65, 70, "Second"),
         ]
 
         result = transcriber.segments_to_text_with_timestamps(segments)
@@ -119,9 +105,11 @@ class TestTranscriber:
         assert "First" in result
         assert "Second" in result
 
-    @patch('src.transcriber.torch')
-    @patch('src.transcriber.whisper')
-    def test_segments_to_text_with_timestamps_and_speakers(self, mock_whisper, mock_torch):
+    @patch("src.transcriber.torch")
+    @patch("src.transcriber.whisper")
+    def test_segments_to_text_with_timestamps_and_speakers(
+        self, mock_whisper, mock_torch
+    ):
         """Ensure timestamps and speaker labels are included."""
         mock_torch.cuda.is_available.return_value = False
         mock_torch.backends.mps.is_available.return_value = False
@@ -130,12 +118,11 @@ class TestTranscriber:
 
         segments = [
             TranscriptionSegment(0, 5, "Hello", speaker="Speaker 1"),
-            TranscriptionSegment(5, 10, "Hi", speaker="Speaker 2")
+            TranscriptionSegment(5, 10, "Hi", speaker="Speaker 2"),
         ]
 
         result = transcriber.segments_to_text_with_timestamps(
-            segments,
-            with_speakers=True
+            segments, with_speakers=True
         )
 
         assert "[Speaker 1]" in result
@@ -143,9 +130,11 @@ class TestTranscriber:
         assert "[00:00]" in result
         assert "[00:05]" in result
 
-    @patch('src.transcriber.torch')
-    @patch('src.transcriber.whisper')
-    def test_update_segments_from_text_preserves_speakers(self, mock_whisper, mock_torch):
+    @patch("src.transcriber.torch")
+    @patch("src.transcriber.whisper")
+    def test_update_segments_from_text_preserves_speakers(
+        self, mock_whisper, mock_torch
+    ):
         """Refined text should retain dominant speaker labels for merged paragraphs."""
         mock_torch.cuda.is_available.return_value = False
         mock_torch.backends.mps.is_available.return_value = False
@@ -160,8 +149,7 @@ class TestTranscriber:
         ]
 
         refined_text = (
-            "Combined text for speaker zero.\n\n"
-            "Combined text for speaker one."
+            "Combined text for speaker zero.\n\n" "Combined text for speaker one."
         )
 
         updated_segments = transcriber.update_segments_from_text(segments, refined_text)
@@ -183,23 +171,25 @@ class TestChunking:
         transcriber = Transcriber(method=TranscribeOptions.WHISPER_OPENAI_API)
 
         # Mock validation to skip file checks
-        with patch.object(transcriber, '_validate_audio_path'):
+        with patch.object(transcriber, "_validate_audio_path"):
             # Mock the actual file operations
-            with patch('subprocess.run') as mock_run:
+            with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(stdout="100.0", returncode=0)
 
                 # Mock _find_speech_boundaries to return empty list (simple splitting)
-                with patch.object(transcriber, '_find_speech_boundaries', return_value=[]):
+                with patch.object(
+                    transcriber, "_find_speech_boundaries", return_value=[]
+                ):
                     # Create a fake audio path
                     fake_path = Path("/fake/audio.mp3")
 
                     # Mock file size to trigger chunking
-                    with patch.object(Path, 'stat') as mock_stat:
+                    with patch.object(Path, "stat") as mock_stat:
                         mock_stat.return_value.st_size = 50 * 1024 * 1024  # 50 MB
 
-                        with patch.object(Path, 'suffix', '.mp3'):
-                            with patch.object(Path, 'stem', 'audio'):
-                                with patch.object(Path, 'parent', Path('/fake')):
+                        with patch.object(Path, "suffix", ".mp3"):
+                            with patch.object(Path, "stem", "audio"):
+                                with patch.object(Path, "parent", Path("/fake")):
                                     chunks = transcriber._split_audio_file(fake_path)
 
                                     # Should return list of tuples
@@ -227,7 +217,7 @@ class TestChunking:
 
         # Simulate 3 chunks: chunk 0 has speech, chunk 1 is silent, chunk 2 has speech
         mock_chunks = [
-            (Path("/fake/chunk_0.mp3"), 0.0, 100.0),    # 0-100s: speech
+            (Path("/fake/chunk_0.mp3"), 0.0, 100.0),  # 0-100s: speech
             (Path("/fake/chunk_1.mp3"), 100.0, 200.0),  # 100-200s: SILENT
             (Path("/fake/chunk_2.mp3"), 200.0, 300.0),  # 200-300s: speech
         ]
@@ -245,20 +235,22 @@ class TestChunking:
                 return [TranscriptionSegment(0.0, 10.0, "Third segment")]
             return []
 
-        with patch.object(transcriber, '_split_audio_file', return_value=mock_chunks):
-            with patch.object(transcriber, '_transcribe_single_file_with_openai', side_effect=mock_transcribe_single):
+        with patch.object(transcriber, "_split_audio_file", return_value=mock_chunks):
+            with patch.object(
+                transcriber,
+                "_transcribe_single_file_with_openai",
+                side_effect=mock_transcribe_single,
+            ):
                 # Mock OpenAI API key
-                with patch('src.transcriber.settings.OPENAI_API_KEY', 'mock-api-key'):
+                with patch("src.transcriber.settings.OPENAI_API_KEY", "mock-api-key"):
                     # Mock file size check
                     fake_path = Path("/fake/large_audio.mp3")
-                    with patch.object(Path, 'stat') as mock_stat:
+                    with patch.object(Path, "stat") as mock_stat:
                         mock_stat.return_value.st_size = 50 * 1024 * 1024  # 50 MB
 
                         # Call the main transcription method
                         segments = transcriber._transcribe_with_openai_api(
-                            fake_path,
-                            language='en',
-                            initial_prompt=None
+                            fake_path, language="en", initial_prompt=None
                         )
 
                     # Should have 2 segments (chunk 1 was silent)

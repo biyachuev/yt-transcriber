@@ -1,4 +1,5 @@
 """Tests for calibrate module"""
+
 import pytest
 from pathlib import Path
 import tempfile
@@ -18,7 +19,7 @@ def temp_dir():
 class TestCalibrateUtilities:
     """Tests for calibrate script utilities"""
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_ffprobe_duration_extraction(self, mock_run):
         """Test extracting duration with ffprobe"""
         mock_result = Mock()
@@ -28,28 +29,31 @@ class TestCalibrateUtilities:
 
         # Simulate ffprobe call
         result = subprocess.run(
-            ['ffprobe', '-v', 'error', '-show_entries',
-             'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1',
-             'test.mp3'],
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                "test.mp3",
+            ],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
 
         duration = float(result.stdout.strip())
         assert duration == 180.5
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_ffprobe_error_handling(self, mock_run):
         """Test ffprobe error handling"""
-        mock_run.side_effect = subprocess.CalledProcessError(1, 'ffprobe')
+        mock_run.side_effect = subprocess.CalledProcessError(1, "ffprobe")
 
         with pytest.raises(subprocess.CalledProcessError):
-            subprocess.run(
-                ['ffprobe', 'test.mp3'],
-                capture_output=True,
-                check=True
-            )
+            subprocess.run(["ffprobe", "test.mp3"], capture_output=True, check=True)
 
     def test_find_test_files(self, temp_dir):
         """Test finding test files"""
@@ -79,7 +83,7 @@ class TestCalibrateUtilities:
         invalid_model = "whisper_invalid"
         assert invalid_model not in valid_models
 
-    @patch('time.time')
+    @patch("time.time")
     def test_timing_measurement(self, mock_time):
         """Test timing measurement"""
         # Simulate time progression
@@ -109,16 +113,16 @@ class TestCalibrateUtilities:
 
         # Format results
         results = {
-            'duration': duration,
-            'processing_time': processing_time,
-            'multiplier': multiplier,
-            'speedup': duration / processing_time
+            "duration": duration,
+            "processing_time": processing_time,
+            "multiplier": multiplier,
+            "speedup": duration / processing_time,
         }
 
-        assert results['duration'] == 180.0
-        assert results['processing_time'] == 10.8
-        assert abs(results['multiplier'] - 0.06) < 0.001
-        assert abs(results['speedup'] - 16.67) < 0.01
+        assert results["duration"] == 180.0
+        assert results["processing_time"] == 10.8
+        assert abs(results["multiplier"] - 0.06) < 0.001
+        assert abs(results["speedup"] - 16.67) < 0.01
 
 
 class TestCalibrateWorkflow:
@@ -149,7 +153,7 @@ class TestCalibrateWorkflow:
         assert len(test_files) == 1
         assert test_files[0].name == "test.mp3"
 
-    @patch('sys.argv', ['calibrate.py', 'whisper_base'])
+    @patch("sys.argv", ["calibrate.py", "whisper_base"])
     def test_argument_parsing(self):
         """Test command line argument parsing"""
         import sys
@@ -161,7 +165,7 @@ class TestCalibrateWorkflow:
 
         assert model == "whisper_base"
 
-    @patch('sys.argv', ['calibrate.py'])
+    @patch("sys.argv", ["calibrate.py"])
     def test_default_model(self):
         """Test default model selection"""
         import sys
@@ -188,9 +192,9 @@ class TestCalibrateMath:
     def test_multiplier_various_models(self):
         """Test multiplier calculation for various models"""
         test_cases = [
-            (60.0, 3.6, 0.06),    # base model
-            (60.0, 11.4, 0.19),   # small model
-            (60.0, 27.0, 0.45),   # medium model
+            (60.0, 3.6, 0.06),  # base model
+            (60.0, 11.4, 0.19),  # small model
+            (60.0, 27.0, 0.45),  # medium model
         ]
 
         for duration, proc_time, expected_mult in test_cases:

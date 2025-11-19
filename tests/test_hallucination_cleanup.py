@@ -1,6 +1,7 @@
 """
 Unit tests for Whisper hallucination cleanup functionality.
 """
+
 import pytest
 from src.transcriber import Transcriber, TranscriptionSegment
 
@@ -16,26 +17,22 @@ class TestHallucinationCleanup:
         """Test removal of Korean characters from Russian text."""
         segments = [
             TranscriptionSegment(
-                start=0.0,
-                end=5.0,
-                text="Нормальный текст",
-                speaker=None
+                start=0.0, end=5.0, text="Нормальный текст", speaker=None
             ),
             TranscriptionSegment(
                 start=5.0,
                 end=10.0,
                 text="Текст с 사람 корейскими символами",
-                speaker=None
+                speaker=None,
             ),
             TranscriptionSegment(
-                start=10.0,
-                end=15.0,
-                text="Ещё нормальный текст",
-                speaker=None
+                start=10.0, end=15.0, text="Ещё нормальный текст", speaker=None
             ),
         ]
 
-        cleaned = self.transcriber._clean_hallucinations(segments, expected_language="ru")
+        cleaned = self.transcriber._clean_hallucinations(
+            segments, expected_language="ru"
+        )
 
         # The segment with Korean characters should be removed (>5% non-standard chars)
         assert len(cleaned) == 2
@@ -46,26 +43,17 @@ class TestHallucinationCleanup:
         """Test removal of hallucinated random names."""
         segments = [
             TranscriptionSegment(
-                start=0.0,
-                end=5.0,
-                text="Нормальная речь о технологиях",
-                speaker=None
+                start=0.0, end=5.0, text="Нормальная речь о технологиях", speaker=None
             ),
             TranscriptionSegment(
-                start=5.0,
-                end=10.0,
-                text="Shepherd Bettsies",
-                speaker=None
+                start=5.0, end=10.0, text="Shepherd Bettsies", speaker=None
             ),
-            TranscriptionSegment(
-                start=10.0,
-                end=15.0,
-                text="campo",
-                speaker=None
-            ),
+            TranscriptionSegment(start=10.0, end=15.0, text="campo", speaker=None),
         ]
 
-        cleaned = self.transcriber._clean_hallucinations(segments, expected_language="ru")
+        cleaned = self.transcriber._clean_hallucinations(
+            segments, expected_language="ru"
+        )
 
         # Hallucinated names should be removed
         assert len(cleaned) == 1
@@ -78,23 +66,25 @@ class TestHallucinationCleanup:
                 start=0.0,
                 end=5.0,
                 text="Работаю в компании GenAI",  # Normal - technical term
-                speaker=None
+                speaker=None,
             ),
             TranscriptionSegment(
                 start=5.0,
                 end=10.0,
                 text="got interesting questionable",  # Hallucination - too much English
-                speaker=None
+                speaker=None,
             ),
             TranscriptionSegment(
                 start=10.0,
                 end=15.0,
                 text="Продолжаем обсуждение AI",  # Normal - AI is accepted term
-                speaker=None
+                speaker=None,
             ),
         ]
 
-        cleaned = self.transcriber._clean_hallucinations(segments, expected_language="ru")
+        cleaned = self.transcriber._clean_hallucinations(
+            segments, expected_language="ru"
+        )
 
         # Should keep segments with Russian + technical terms, remove pure English hallucination
         assert len(cleaned) == 2
@@ -104,26 +94,22 @@ class TestHallucinationCleanup:
         """Test removal of typical YouTube subscription hallucinations."""
         segments = [
             TranscriptionSegment(
-                start=0.0,
-                end=5.0,
-                text="Нормальное содержание",
-                speaker=None
+                start=0.0, end=5.0, text="Нормальное содержание", speaker=None
             ),
             TranscriptionSegment(
-                start=5.0,
-                end=10.0,
-                text="Thanks for watching",
-                speaker=None
+                start=5.0, end=10.0, text="Thanks for watching", speaker=None
             ),
             TranscriptionSegment(
                 start=10.0,
                 end=15.0,
                 text="Please subscribe and hit the bell",
-                speaker=None
+                speaker=None,
             ),
         ]
 
-        cleaned = self.transcriber._clean_hallucinations(segments, expected_language="ru")
+        cleaned = self.transcriber._clean_hallucinations(
+            segments, expected_language="ru"
+        )
 
         # Subscription phrases should be removed
         assert len(cleaned) == 1
@@ -136,23 +122,19 @@ class TestHallucinationCleanup:
                 start=0.0,
                 end=5.0,
                 text="Нормальный длинный сегмент текста",
-                speaker=None
+                speaker=None,
             ),
             TranscriptionSegment(
-                start=5.0,
-                end=10.0,
-                text="ab",  # Too short
-                speaker=None
+                start=5.0, end=10.0, text="ab", speaker=None  # Too short
             ),
             TranscriptionSegment(
-                start=10.0,
-                end=15.0,
-                text="Ещё один нормальный сегмент",
-                speaker=None
+                start=10.0, end=15.0, text="Ещё один нормальный сегмент", speaker=None
             ),
         ]
 
-        cleaned = self.transcriber._clean_hallucinations(segments, expected_language="ru")
+        cleaned = self.transcriber._clean_hallucinations(
+            segments, expected_language="ru"
+        )
 
         # Very short segments should be removed
         assert len(cleaned) == 2
@@ -161,26 +143,22 @@ class TestHallucinationCleanup:
         """Test that speaker labels are preserved during cleanup."""
         segments = [
             TranscriptionSegment(
-                start=0.0,
-                end=5.0,
-                text="Текст первого спикера",
-                speaker="SPEAKER_01"
+                start=0.0, end=5.0, text="Текст первого спикера", speaker="SPEAKER_01"
             ),
             TranscriptionSegment(
                 start=5.0,
                 end=10.0,
                 text="Shepherd Bettsies",  # Hallucination
-                speaker="SPEAKER_02"
+                speaker="SPEAKER_02",
             ),
             TranscriptionSegment(
-                start=10.0,
-                end=15.0,
-                text="Текст второго спикера",
-                speaker="SPEAKER_02"
+                start=10.0, end=15.0, text="Текст второго спикера", speaker="SPEAKER_02"
             ),
         ]
 
-        cleaned = self.transcriber._clean_hallucinations(segments, expected_language="ru")
+        cleaned = self.transcriber._clean_hallucinations(
+            segments, expected_language="ru"
+        )
 
         # Speaker labels should be preserved
         assert len(cleaned) == 2
@@ -191,26 +169,20 @@ class TestHallucinationCleanup:
         """Test removal of segments with too many special characters."""
         segments = [
             TranscriptionSegment(
-                start=0.0,
-                end=5.0,
-                text="Нормальный текст с пунктуацией.",
-                speaker=None
+                start=0.0, end=5.0, text="Нормальный текст с пунктуацией.", speaker=None
             ),
             TranscriptionSegment(
                 start=5.0,
                 end=10.0,
                 text="###$$%%%^^^&&&***",  # Too many special chars
-                speaker=None
+                speaker=None,
             ),
-            TranscriptionSegment(
-                start=10.0,
-                end=15.0,
-                text="Ещё текст",
-                speaker=None
-            ),
+            TranscriptionSegment(start=10.0, end=15.0, text="Ещё текст", speaker=None),
         ]
 
-        cleaned = self.transcriber._clean_hallucinations(segments, expected_language="ru")
+        cleaned = self.transcriber._clean_hallucinations(
+            segments, expected_language="ru"
+        )
 
         # Segments with too many special characters should be removed
         assert len(cleaned) == 2
@@ -219,26 +191,25 @@ class TestHallucinationCleanup:
         """Test that technical terms and brand names are preserved."""
         segments = [
             TranscriptionSegment(
-                start=0.0,
-                end=5.0,
-                text="Я работаю в Тбанке или Тинькофф",
-                speaker=None
+                start=0.0, end=5.0, text="Я работаю в Тбанке или Тинькофф", speaker=None
             ),
             TranscriptionSegment(
                 start=5.0,
                 end=10.0,
                 text="Мы используем технологии ChatGPT и OpenAI",
-                speaker=None
+                speaker=None,
             ),
             TranscriptionSegment(
                 start=10.0,
                 end=15.0,
                 text="Применяем подходы GenAI и RAG в продуктах",
-                speaker=None
+                speaker=None,
             ),
         ]
 
-        cleaned = self.transcriber._clean_hallucinations(segments, expected_language="ru")
+        cleaned = self.transcriber._clean_hallucinations(
+            segments, expected_language="ru"
+        )
 
         # All segments with technical terms mixed with Russian should be preserved
         assert len(cleaned) == 3
@@ -247,27 +218,16 @@ class TestHallucinationCleanup:
     def test_empty_segments_removed(self):
         """Test that empty segments are removed."""
         segments = [
+            TranscriptionSegment(start=0.0, end=5.0, text="Текст", speaker=None),
             TranscriptionSegment(
-                start=0.0,
-                end=5.0,
-                text="Текст",
-                speaker=None
+                start=5.0, end=10.0, text="   ", speaker=None  # Only whitespace
             ),
-            TranscriptionSegment(
-                start=5.0,
-                end=10.0,
-                text="   ",  # Only whitespace
-                speaker=None
-            ),
-            TranscriptionSegment(
-                start=10.0,
-                end=15.0,
-                text="",  # Empty
-                speaker=None
-            ),
+            TranscriptionSegment(start=10.0, end=15.0, text="", speaker=None),  # Empty
         ]
 
-        cleaned = self.transcriber._clean_hallucinations(segments, expected_language="ru")
+        cleaned = self.transcriber._clean_hallucinations(
+            segments, expected_language="ru"
+        )
 
         # Only non-empty segment should remain
         assert len(cleaned) == 1
@@ -279,11 +239,13 @@ class TestHallucinationCleanup:
                 start=0.0,
                 end=5.0,
                 text="Текст с 사람한국어 символами продолжается нормально",
-                speaker=None
+                speaker=None,
             ),
         ]
 
-        cleaned = self.transcriber._clean_hallucinations(segments, expected_language="ru")
+        cleaned = self.transcriber._clean_hallucinations(
+            segments, expected_language="ru"
+        )
 
         # The segment should be removed due to suspicious mixing (>5% Korean chars)
         # (Korean characters in Russian text is a strong hallucination signal)
@@ -293,26 +255,19 @@ class TestHallucinationCleanup:
         """Test that English transcriptions work correctly."""
         segments = [
             TranscriptionSegment(
-                start=0.0,
-                end=5.0,
-                text="This is normal English text",
-                speaker=None
+                start=0.0, end=5.0, text="This is normal English text", speaker=None
             ),
             TranscriptionSegment(
-                start=5.0,
-                end=10.0,
-                text="사람한국어말 Korean in English",
-                speaker=None
+                start=5.0, end=10.0, text="사람한국어말 Korean in English", speaker=None
             ),
             TranscriptionSegment(
-                start=10.0,
-                end=15.0,
-                text="More normal text",
-                speaker=None
+                start=10.0, end=15.0, text="More normal text", speaker=None
             ),
         ]
 
-        cleaned = self.transcriber._clean_hallucinations(segments, expected_language="en")
+        cleaned = self.transcriber._clean_hallucinations(
+            segments, expected_language="en"
+        )
 
         # Korean characters should trigger removal even in English (>5% threshold)
         assert len(cleaned) == 2

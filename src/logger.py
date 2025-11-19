@@ -1,6 +1,7 @@
 """
 Logging configuration helpers.
 """
+
 import logging
 import sys
 from pathlib import Path
@@ -13,14 +14,14 @@ class ColoredFormatter(logging.Formatter):
 
     # ANSI color codes
     COLORS = {
-        'DEBUG': '\033[36m',      # Cyan
-        'INFO': '\033[32m',       # Green
-        'WARNING': '\033[33m',    # Orange/Yellow
-        'ERROR': '\033[31m',      # Red
-        'CRITICAL': '\033[1;31m', # Bold Red
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
+        "WARNING": "\033[33m",  # Orange/Yellow
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[1;31m",  # Bold Red
     }
-    RESET = '\033[0m'
-    ORANGE = '\033[38;5;208m'  # Bright orange for cost values
+    RESET = "\033[0m"
+    ORANGE = "\033[38;5;208m"  # Bright orange for cost values
 
     def format(self, record):
         """Format log record with color for terminal output."""
@@ -57,8 +58,8 @@ def setup_logger(name: str = "yt") -> logging.Logger:
 
     # Console handler with colored output
     console_formatter = ColoredFormatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
@@ -67,11 +68,11 @@ def setup_logger(name: str = "yt") -> logging.Logger:
 
     # File handler with plain text (no colors in file)
     file_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
     log_file = settings.LOGS_DIR / f"app_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)

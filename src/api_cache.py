@@ -1,6 +1,7 @@
 """
 API response caching and rate limiting module.
 """
+
 import hashlib
 import json
 import time
@@ -16,7 +17,12 @@ from .config import settings
 class APICache:
     """Cache for API responses with TTL support and LRU eviction."""
 
-    def __init__(self, cache_dir: Optional[Path] = None, ttl_days: int = 7, max_entries: int = 1000):
+    def __init__(
+        self,
+        cache_dir: Optional[Path] = None,
+        ttl_days: int = 7,
+        max_entries: int = 1000,
+    ):
         """
         Initialize the cache.
 
@@ -49,7 +55,7 @@ class APICache:
         # Convert data to canonical JSON string
         json_str = json.dumps(data, sort_keys=True, ensure_ascii=False)
         # Create hash
-        hash_obj = hashlib.sha256(f"{namespace}:{json_str}".encode('utf-8'))
+        hash_obj = hashlib.sha256(f"{namespace}:{json_str}".encode("utf-8"))
         return hash_obj.hexdigest()
 
     def _get_cache_path(self, cache_key: str) -> Path:
@@ -69,11 +75,13 @@ class APICache:
         try:
             for cache_file in self.cache_dir.glob("*.json"):
                 try:
-                    with open(cache_file, 'r', encoding='utf-8') as f:
+                    with open(cache_file, "r", encoding="utf-8") as f:
                         cache_entry = json.load(f)
 
                     cache_key = cache_file.stem
-                    timestamp = datetime.fromisoformat(cache_entry['timestamp']).timestamp()
+                    timestamp = datetime.fromisoformat(
+                        cache_entry["timestamp"]
+                    ).timestamp()
                     self._access_order[cache_key] = timestamp
                 except Exception:
                     continue
@@ -110,7 +118,9 @@ class APICache:
             del self._access_order[cache_key]
 
         if evict_count > 0:
-            logger.info(f"Evicted {evict_count} cache entries (LRU policy, max={self.max_entries})")
+            logger.info(
+                f"Evicted {evict_count} cache entries (LRU policy, max={self.max_entries})"
+            )
 
     def get(self, namespace: str, data: Any) -> Optional[Any]:
         """
@@ -130,11 +140,11 @@ class APICache:
             return None
 
         try:
-            with open(cache_path, 'r', encoding='utf-8') as f:
+            with open(cache_path, "r", encoding="utf-8") as f:
                 cache_entry = json.load(f)
 
             # Check if expired
-            cached_time = datetime.fromisoformat(cache_entry['timestamp'])
+            cached_time = datetime.fromisoformat(cache_entry["timestamp"])
             if datetime.now() - cached_time > timedelta(days=self.ttl_days):
                 logger.debug(f"Cache entry expired: {cache_key[:8]}...")
                 cache_path.unlink()
@@ -146,7 +156,7 @@ class APICache:
             self._update_access_time(cache_key)
 
             logger.debug(f"Cache hit: {namespace} - {cache_key[:8]}...")
-            return cache_entry['value']
+            return cache_entry["value"]
 
         except Exception as e:
             logger.warning(f"Failed to read cache: {e}")
@@ -166,12 +176,12 @@ class APICache:
 
         try:
             cache_entry = {
-                'timestamp': datetime.now().isoformat(),
-                'namespace': namespace,
-                'value': value
+                "timestamp": datetime.now().isoformat(),
+                "namespace": namespace,
+                "value": value,
             }
 
-            with open(cache_path, 'w', encoding='utf-8') as f:
+            with open(cache_path, "w", encoding="utf-8") as f:
                 json.dump(cache_entry, f, ensure_ascii=False, indent=2)
 
             # Update access time and enforce size limit
@@ -189,10 +199,10 @@ class APICache:
             count = 0
             for cache_file in self.cache_dir.glob("*.json"):
                 try:
-                    with open(cache_file, 'r', encoding='utf-8') as f:
+                    with open(cache_file, "r", encoding="utf-8") as f:
                         cache_entry = json.load(f)
 
-                    cached_time = datetime.fromisoformat(cache_entry['timestamp'])
+                    cached_time = datetime.fromisoformat(cache_entry["timestamp"])
                     if datetime.now() - cached_time > timedelta(days=self.ttl_days):
                         cache_file.unlink()
                         count += 1
@@ -219,10 +229,10 @@ class APICache:
             for cache_file in self.cache_dir.glob("*.json"):
                 if namespace:
                     try:
-                        with open(cache_file, 'r', encoding='utf-8') as f:
+                        with open(cache_file, "r", encoding="utf-8") as f:
                             cache_entry = json.load(f)
 
-                        if cache_entry.get('namespace') == namespace:
+                        if cache_entry.get("namespace") == namespace:
                             cache_file.unlink()
                             cache_key = cache_file.stem
                             if cache_key in self._access_order:
@@ -237,7 +247,10 @@ class APICache:
             if not namespace:
                 self._access_order.clear()
 
-            logger.info(f"Cleared {count} cache entries" + (f" for namespace '{namespace}'" if namespace else ""))
+            logger.info(
+                f"Cleared {count} cache entries"
+                + (f" for namespace '{namespace}'" if namespace else "")
+            )
 
         except Exception as e:
             logger.warning(f"Failed to clear cache: {e}")
@@ -250,7 +263,9 @@ class APICache:
             Dictionary with cache stats (total entries, size limit, usage percentage)
         """
         total_entries = len(self._access_order)
-        usage_pct = (total_entries / self.max_entries * 100) if self.max_entries > 0 else 0
+        usage_pct = (
+            (total_entries / self.max_entries * 100) if self.max_entries > 0 else 0
+        )
 
         # Calculate total cache size
         total_size_bytes = 0
@@ -264,7 +279,7 @@ class APICache:
             "max_entries": self.max_entries,
             "usage_percentage": round(usage_pct, 1),
             "total_size_mb": round(total_size_mb, 2),
-            "ttl_days": self.ttl_days
+            "ttl_days": self.ttl_days,
         }
 
 

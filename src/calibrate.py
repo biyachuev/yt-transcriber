@@ -2,6 +2,7 @@
 Calibration utility for estimating processing time of different Whisper models.
 Run: python calibrate.py [whisper_base|whisper_small]
 """
+
 import time
 from pathlib import Path
 import subprocess
@@ -230,8 +231,18 @@ print()
 
 comparison_table = [
     {"model": "whisper_base", "quality": "good", "speed": "fast", "multiplier": 0.06},
-    {"model": "whisper_small", "quality": "very good", "speed": "medium", "multiplier": 0.19},
-    {"model": "whisper_medium", "quality": "excellent", "speed": "slow", "multiplier": 0.45},
+    {
+        "model": "whisper_small",
+        "quality": "very good",
+        "speed": "medium",
+        "multiplier": 0.19,
+    },
+    {
+        "model": "whisper_medium",
+        "quality": "excellent",
+        "speed": "slow",
+        "multiplier": 0.45,
+    },
 ]
 
 print("Model           | Quality     | Speed      | Multiplier")
@@ -281,6 +292,7 @@ print()
 print(f"📈 SAMPLE ESTIMATES ({MODEL})")
 print()
 
+
 def humanize(seconds: float) -> str:
     if seconds < 60:
         return f"~{int(seconds)} sec"
@@ -289,6 +301,7 @@ def humanize(seconds: float) -> str:
     if minutes < 10:
         return f"~{minutes}m {secs:02d}s"
     return f"~{minutes} min"
+
 
 examples = [
     ("10 minutes", 600),

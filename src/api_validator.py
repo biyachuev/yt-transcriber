@@ -4,6 +4,7 @@ API key validation module.
 This module provides functions to validate API keys early in the pipeline
 by making test API calls, preventing wasted processing time.
 """
+
 from typing import Literal
 from .logger import logger
 from .config import settings
@@ -85,7 +86,7 @@ def validate_api_keys_for_operation(
     # Check if OpenAI is needed for translation
     if translate_methods:
         for method in translate_methods:
-            method_normalized = method.lower().replace('-', '_')
+            method_normalized = method.lower().replace("-", "_")
             if method_normalized == "openai_api":
                 needs_openai = True
                 break

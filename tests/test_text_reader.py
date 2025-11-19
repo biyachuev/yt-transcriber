@@ -1,4 +1,5 @@
 """Tests for text_reader module"""
+
 import pytest
 from pathlib import Path
 import tempfile
@@ -32,7 +33,7 @@ class TestTextReader:
         """Test reading text file"""
         test_file = temp_dir / "test.txt"
         content = "Test content\nSecond line"
-        with open(test_file, 'w', encoding='utf-8') as f:
+        with open(test_file, "w", encoding="utf-8") as f:
             f.write(content)
 
         result = reader.read_text(str(test_file))
@@ -59,7 +60,7 @@ class TestTextReader:
         """Test reading markdown file"""
         test_file = temp_dir / "test.md"
         content = "# Heading\n\nParagraph with **bold** and *italic*\n\n- List item 1\n- List item 2"
-        with open(test_file, 'w', encoding='utf-8') as f:
+        with open(test_file, "w", encoding="utf-8") as f:
             f.write(content)
 
         result = reader.read_markdown(str(test_file))
@@ -72,7 +73,7 @@ class TestTextReader:
         """Test automatic file format detection"""
         # Test .txt
         txt_file = temp_dir / "test.txt"
-        with open(txt_file, 'w', encoding='utf-8') as f:
+        with open(txt_file, "w", encoding="utf-8") as f:
             f.write("Text content")
 
         result = reader.read_file(str(txt_file))
@@ -106,10 +107,10 @@ class TestTextReader:
         """Test detecting Russian language"""
         text = "Это тестовый текст на русском языке"
         result = reader.detect_language(text)
-        assert result == 'ru'
+        assert result == "ru"
 
     def test_detect_language_english(self, reader):
         """Test detecting English language"""
         text = "This is a test text in English"
         result = reader.detect_language(text)
-        assert result == 'en'
+        assert result == "en"

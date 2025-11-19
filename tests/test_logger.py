@@ -1,6 +1,7 @@
 """
 Tests for logger module.
 """
+
 import pytest
 from src.logger import format_orange
 

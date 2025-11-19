@@ -1,6 +1,7 @@
 """
 Module responsible for producing DOCX and Markdown output documents.
 """
+
 from pathlib import Path
 from typing import List, Optional
 
@@ -154,17 +155,18 @@ class DocumentWriter:
             if translation_segments and translate_method:
                 metadata_lines.append(f"**Метод перевода:** {translate_method}")
 
-            sections.append({
-                "title": "Информация о документе",
-                "method": "",
-                "content": "\n\n".join(metadata_lines)
-            })
+            sections.append(
+                {
+                    "title": "Информация о документе",
+                    "method": "",
+                    "content": "\n\n".join(metadata_lines),
+                }
+            )
 
         if translation_segments:
             if with_timestamps:
                 translation_text = transcriber.segments_to_text_with_timestamps(
-                    translation_segments,
-                    with_speakers=with_speakers
+                    translation_segments, with_speakers=with_speakers
                 )
             else:
                 translation_text = transcriber.segments_to_text(translation_segments)
@@ -179,15 +181,18 @@ class DocumentWriter:
 
         if with_timestamps:
             transcription_text = transcriber.segments_to_text_with_timestamps(
-                transcription_segments,
-                with_speakers=with_speakers
+                transcription_segments, with_speakers=with_speakers
             )
         else:
             # Even without timestamps, we can show speaker labels
             if with_speakers:
-                transcription_text = transcriber.segments_to_text_with_speakers(transcription_segments)
+                transcription_text = transcriber.segments_to_text_with_speakers(
+                    transcription_segments
+                )
             else:
-                transcription_text = transcriber.segments_to_text(transcription_segments)
+                transcription_text = transcriber.segments_to_text(
+                    transcription_segments
+                )
 
         sections.append(
             {

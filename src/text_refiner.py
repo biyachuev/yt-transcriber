@@ -1,6 +1,7 @@
 """
 Модуль для улучшения транскрибированного текста с помощью LLM
 """
+
 from typing import List, Optional
 import requests
 import json
@@ -21,7 +22,7 @@ class TextRefiner:
         backend: str = RefineOptions.OLLAMA,
         model_name: str = "qwen2.5:3b",
         ollama_url: str = "http://localhost:11434",
-        use_cache: bool = True
+        use_cache: bool = True,
     ):
         """
         Инициализация
@@ -38,7 +39,9 @@ class TextRefiner:
         self.api_endpoint = f"{ollama_url}/api/generate"
         self.use_cache = use_cache
         self.cache = get_cache() if use_cache else None
-        self.rate_limiter = get_openai_rate_limiter() if backend == RefineOptions.OPENAI_API else None
+        self.rate_limiter = (
+            get_openai_rate_limiter() if backend == RefineOptions.OPENAI_API else None
+        )
 
         # Проверяем доступность бэкенда
         if self.backend == RefineOptions.OLLAMA:
@@ -59,12 +62,14 @@ class TextRefiner:
                 logger.info(f"Ollama сервер доступен: {self.ollama_url}")
 
                 # Проверяем наличие нужной модели
-                models = response.json().get('models', [])
-                model_names = [m['name'] for m in models]
+                models = response.json().get("models", [])
+                model_names = [m["name"] for m in models]
 
                 if self.model_name not in model_names:
                     error_msg = f"\n{'='*60}\n"
-                    error_msg += f"❌ ОШИБКА: Модель '{self.model_name}' не найдена в Ollama\n"
+                    error_msg += (
+                        f"❌ ОШИБКА: Модель '{self.model_name}' не найдена в Ollama\n"
+                    )
                     error_msg += f"{'='*60}\n\n"
 
                     if model_names:
@@ -84,7 +89,9 @@ class TextRefiner:
                     error_msg += f"{'='*60}"
 
                     logger.error(error_msg)
-                    raise RuntimeError(f"Модель '{self.model_name}' не найдена в Ollama. Выполните: ollama pull {self.model_name}")
+                    raise RuntimeError(
+                        f"Модель '{self.model_name}' не найдена в Ollama. Выполните: ollama pull {self.model_name}"
+                    )
                 else:
                     logger.info(f"Модель '{self.model_name}' найдена")
             else:
@@ -113,7 +120,9 @@ class TextRefiner:
             error_msg += f"❌ ОШИБКА: OPENAI_API_KEY не найден\n"
             error_msg += f"{'='*60}\n\n"
             error_msg += f"Для использования OpenAI API необходимо:\n"
-            error_msg += f"1. Получить API ключ на https://platform.openai.com/api-keys\n"
+            error_msg += (
+                f"1. Получить API ключ на https://platform.openai.com/api-keys\n"
+            )
             error_msg += f"2. Добавить его в .env файл:\n"
             error_msg += f"   OPENAI_API_KEY=your-api-key-here\n"
             error_msg += f"{'='*60}"
@@ -123,6 +132,7 @@ class TextRefiner:
 
         try:
             from openai import OpenAI
+
             # Quick validation check
             client = OpenAI(api_key=api_key)
             logger.info("OpenAI API доступен")
@@ -134,7 +144,9 @@ class TextRefiner:
             logger.error(f"Ошибка при проверке OpenAI API: {e}")
             raise
 
-    def _split_text_into_chunks(self, text: str, max_chunk_size: int = 2000) -> List[str]:
+    def _split_text_into_chunks(
+        self, text: str, max_chunk_size: int = 2000
+    ) -> List[str]:
         """
         Разбивка текста на чанки по предложениям
 
@@ -146,7 +158,9 @@ class TextRefiner:
             Список чанков текста
         """
         # Разбиваем по предложениям (простой вариант)
-        sentences = text.replace('! ', '!|').replace('? ', '?|').replace('. ', '.|').split('|')
+        sentences = (
+            text.replace("! ", "!|").replace("? ", "?|").replace(". ", ".|").split("|")
+        )
 
         chunks = []
         current_chunk = []
@@ -161,7 +175,7 @@ class TextRefiner:
 
             # Если добавление предложения превысит лимит и чанк не пустой
             if current_length + sentence_length > max_chunk_size and current_chunk:
-                chunks.append(' '.join(current_chunk))
+                chunks.append(" ".join(current_chunk))
                 current_chunk = [sentence]
                 current_length = sentence_length
             else:
@@ -170,7 +184,7 @@ class TextRefiner:
 
         # Добавляем последний чанк
         if current_chunk:
-            chunks.append(' '.join(current_chunk))
+            chunks.append(" ".join(current_chunk))
 
         logger.info(f"Текст разбит на {len(chunks)} частей для обработки")
         return chunks
@@ -193,20 +207,22 @@ class TextRefiner:
                 "temperature": 0.0,  # Минимальная температура для максимальной точности
                 "top_p": 0.9,
                 "num_predict": 1000,  # Ограничение длины ответа
-                "stop": ["###", "RAW TRANSCRIPTION:", "EXAMPLE"]  # Стоп-последовательности для предотвращения переобъяснений
-            }
+                "stop": [
+                    "###",
+                    "RAW TRANSCRIPTION:",
+                    "EXAMPLE",
+                ],  # Стоп-последовательности для предотвращения переобъяснений
+            },
         }
 
         try:
             response = requests.post(
-                self.api_endpoint,
-                json=payload,
-                timeout=300  # 5 минут таймаут
+                self.api_endpoint, json=payload, timeout=300  # 5 минут таймаут
             )
             response.raise_for_status()
 
             result = response.json()
-            return result.get('response', '').strip()
+            return result.get("response", "").strip()
         except Exception as e:
             logger.error(f"Ошибка при вызове Ollama: {e}")
             raise
@@ -229,7 +245,7 @@ class TextRefiner:
                 "prompt": prompt,
                 "system_prompt": system_prompt,
                 "model": self.model_name,
-                "method": "openai_refine"
+                "method": "openai_refine",
             }
             cached_result = self.cache.get("refinement", cache_key)
             if cached_result is not None:
@@ -265,7 +281,7 @@ class TextRefiner:
                 cost_tracker.add_refinement(
                     response.usage.prompt_tokens,
                     response.usage.completion_tokens,
-                    model=self.model_name
+                    model=self.model_name,
                 )
 
             # Cache the result
@@ -325,16 +341,18 @@ class TextRefiner:
             'ru' для русского, 'en' для английского
         """
         # Простое определение: считаем кириллицу
-        cyrillic_chars = sum(1 for c in text if '\u0400' <= c <= '\u04FF')
+        cyrillic_chars = sum(1 for c in text if "\u0400" <= c <= "\u04ff")
         total_chars = sum(1 for c in text if c.isalpha())
 
         if total_chars == 0:
-            return 'en'
+            return "en"
 
         # Если больше 30% кириллицы - считаем русским
-        return 'ru' if (cyrillic_chars / total_chars) > 0.3 else 'en'
+        return "ru" if (cyrillic_chars / total_chars) > 0.3 else "en"
 
-    def _group_lines_into_paragraphs(self, text: str, min_paragraph_length: int = 400) -> str:
+    def _group_lines_into_paragraphs(
+        self, text: str, min_paragraph_length: int = 400
+    ) -> str:
         """
         Группирует короткие строки в абзацы
 
@@ -345,7 +363,7 @@ class TextRefiner:
         Returns:
             Текст с объединенными абзацами
         """
-        lines = text.split('\n')
+        lines = text.split("\n")
         paragraphs = []
         current_paragraph = []
         current_length = 0
@@ -356,7 +374,7 @@ class TextRefiner:
             # Пустая строка - может быть границей, но только если текущий абзац достаточно длинный
             if not line:
                 if current_paragraph and current_length >= min_paragraph_length:
-                    paragraphs.append(' '.join(current_paragraph))
+                    paragraphs.append(" ".join(current_paragraph))
                     current_paragraph = []
                     current_length = 0
                 # Если абзац короткий - игнорируем пустую строку и продолжаем накапливать
@@ -368,19 +386,25 @@ class TextRefiner:
 
             # Если абзац достиг минимальной длины и строка заканчивается на точку
             # это хорошее место для завершения абзаца
-            if current_length >= min_paragraph_length and line and line[-1] in '.!?':
-                paragraphs.append(' '.join(current_paragraph))
+            if current_length >= min_paragraph_length and line and line[-1] in ".!?":
+                paragraphs.append(" ".join(current_paragraph))
                 current_paragraph = []
                 current_length = 0
 
         # Добавляем последний абзац
         if current_paragraph:
-            paragraphs.append(' '.join(current_paragraph))
+            paragraphs.append(" ".join(current_paragraph))
 
         # Объединяем абзацы через двойной перенос строки
-        return '\n\n'.join(paragraphs)
+        return "\n\n".join(paragraphs)
 
-    def refine_chunk(self, chunk: str, context: Optional[str] = None, topic: Optional[str] = None, language: Optional[str] = None) -> str:
+    def refine_chunk(
+        self,
+        chunk: str,
+        context: Optional[str] = None,
+        topic: Optional[str] = None,
+        language: Optional[str] = None,
+    ) -> str:
         """
         Улучшение одного чанка текста
 
@@ -402,7 +426,7 @@ class TextRefiner:
         topic_info = topic if topic else "общая"
 
         # Выбираем промпт в зависимости от языка
-        if language == 'ru':
+        if language == "ru":
             prompt = f"""Очистите эту расшифровку речи. Удаляйте ТОЛЬКО слова-паразиты и метакомментарии. Сохраняйте ВСЁ остальное.
 
 УДАЛЯЙТЕ ТОЛЬКО:
@@ -591,7 +615,6 @@ Now clean this text. Return ONLY the cleaned text:
 
 {chunk}"""
 
-
         try:
             # Call the appropriate backend
             if self.backend == RefineOptions.OPENAI_API:
@@ -601,21 +624,29 @@ Now clean this text. Return ONLY the cleaned text:
 
             # Очистка ответа от артефактов
             # Удаляем thinking tags если есть
-            refined_text = refined_text.replace("<think>", "").replace("</think>", "").strip()
+            refined_text = (
+                refined_text.replace("<think>", "").replace("</think>", "").strip()
+            )
 
             # Удаляем артефакты, которые может добавить модель (английские)
             if refined_text.startswith("Corrected transcription:"):
-                refined_text = refined_text.replace("Corrected transcription:", "", 1).strip()
+                refined_text = refined_text.replace(
+                    "Corrected transcription:", "", 1
+                ).strip()
 
             # Удаляем артефакты на русском
             if refined_text.startswith("Исправленная транскрипция:"):
-                refined_text = refined_text.replace("Исправленная транскрипция:", "", 1).strip()
+                refined_text = refined_text.replace(
+                    "Исправленная транскрипция:", "", 1
+                ).strip()
 
             # Удаляем маркеры в конце
-            refined_text = refined_text.replace("### END OF TRANSCRIPTION###", "").strip()
+            refined_text = refined_text.replace(
+                "### END OF TRANSCRIPTION###", ""
+            ).strip()
 
             # Удаляем возможные артефакты в начале (```text, ##, и т.д.)
-            refined_text = refined_text.lstrip('`#\n ')
+            refined_text = refined_text.lstrip("`#\n ")
 
             # Если после очистки текст стал слишком коротким - вернуть оригинал
             if len(refined_text.strip()) < len(chunk) * 0.3:
@@ -646,7 +677,9 @@ Now clean this text. Return ONLY the cleaned text:
 
         # Определяем язык текста
         language = self._detect_language(text[:500])
-        logger.info(f"Определён язык текста: {'русский' if language == 'ru' else 'английский'}")
+        logger.info(
+            f"Определён язык текста: {'русский' if language == 'ru' else 'английский'}"
+        )
 
         # Определяем тематику по началу текста
         topic = self._detect_topic(text[:500])
@@ -657,16 +690,20 @@ Now clean this text. Return ONLY the cleaned text:
         # Обрабатываем каждый чанк
         refined_chunks = []
         for chunk in tqdm(chunks, desc="Улучшение текста"):
-            refined_chunk = self.refine_chunk(chunk, context=context, topic=topic, language=language)
+            refined_chunk = self.refine_chunk(
+                chunk, context=context, topic=topic, language=language
+            )
             refined_chunks.append(refined_chunk)
 
         # Объединяем результаты
-        refined_text = '\n\n'.join(refined_chunks)
+        refined_text = "\n\n".join(refined_chunks)
 
         logger.info("Улучшение транскрипции завершено")
         return refined_text
 
-    def refine_translation(self, translated_text: str, context: Optional[str] = None) -> str:
+    def refine_translation(
+        self, translated_text: str, context: Optional[str] = None
+    ) -> str:
         """
         Улучшение перевода с помощью LLM для большей естественности
 
@@ -728,8 +765,7 @@ Now clean this text. Return ONLY the cleaned text:
 
         for chunk in tqdm(chunks, desc="Улучшение перевода"):
             prompt = TRANSLATION_REFINEMENT_PROMPT.format(
-                text=chunk,
-                context=context_str
+                text=chunk, context=context_str
             )
 
             try:
@@ -741,15 +777,21 @@ Now clean this text. Return ONLY the cleaned text:
                     refined_chunk = self._call_ollama(prompt)
 
                 # Очистка ответа от артефактов
-                refined_chunk = refined_chunk.replace("<think>", "").replace("</think>", "").strip()
+                refined_chunk = (
+                    refined_chunk.replace("<think>", "").replace("</think>", "").strip()
+                )
 
                 # Удаляем возможные артефакты
                 if refined_chunk.startswith("Улучшенный перевод:"):
-                    refined_chunk = refined_chunk.replace("Улучшенный перевод:", "", 1).strip()
+                    refined_chunk = refined_chunk.replace(
+                        "Улучшенный перевод:", "", 1
+                    ).strip()
 
                 # Если результат слишком короткий - вернуть оригинал
                 if len(refined_chunk.strip()) < len(chunk) * 0.3:
-                    logger.warning("Улучшенный перевод слишком короткий, возвращаю оригинал чанка")
+                    logger.warning(
+                        "Улучшенный перевод слишком короткий, возвращаю оригинал чанка"
+                    )
                     refined_chunks.append(chunk)
                 else:
                     refined_chunks.append(refined_chunk.strip())
@@ -759,7 +801,7 @@ Now clean this text. Return ONLY the cleaned text:
                 refined_chunks.append(chunk)
 
         # Объединяем результаты
-        refined_translation = '\n\n'.join(refined_chunks)
+        refined_translation = "\n\n".join(refined_chunks)
 
         logger.info("Улучшение перевода завершено")
         return refined_translation

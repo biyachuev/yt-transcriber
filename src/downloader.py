@@ -1,6 +1,7 @@
 """
 YouTube downloader utility used to fetch audio and metadata.
 """
+
 from pathlib import Path
 from typing import Tuple, Optional
 
@@ -171,7 +172,9 @@ class YouTubeDownloader:
 
                         subtitle_text = response.text
                         subtitle_text = re.sub(r"<[^>]+>", "", subtitle_text)
-                        subtitle_text = re.sub(r"\d{2}:\d{2}:\d{2}\.\d{3}", "", subtitle_text)
+                        subtitle_text = re.sub(
+                            r"\d{2}:\d{2}:\d{2}\.\d{3}", "", subtitle_text
+                        )
                         subtitle_sample = subtitle_text[:2000].strip()
                         logger.info(
                             "  Loaded subtitle sample (%d chars)", len(subtitle_sample)

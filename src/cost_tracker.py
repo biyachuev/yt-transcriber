@@ -2,6 +2,7 @@
 Cost tracking for OpenAI API usage.
 Tracks token usage and estimates costs for different operations.
 """
+
 from typing import Dict, Optional
 from dataclasses import dataclass, field
 from .logger import logger, format_orange
@@ -10,19 +11,19 @@ from .logger import logger, format_orange
 # OpenAI model pricing (as of January 2025, per 1M tokens)
 OPENAI_PRICING = {
     "gpt-4": {
-        "input": 30.0,   # $30 per 1M input tokens
+        "input": 30.0,  # $30 per 1M input tokens
         "output": 60.0,  # $60 per 1M output tokens
     },
     "gpt-4o": {
-        "input": 2.5,    # $2.50 per 1M input tokens
+        "input": 2.5,  # $2.50 per 1M input tokens
         "output": 10.0,  # $10 per 1M output tokens
     },
     "gpt-4o-mini": {
-        "input": 0.15,   # $0.15 per 1M input tokens
+        "input": 0.15,  # $0.15 per 1M input tokens
         "output": 0.60,  # $0.60 per 1M output tokens
     },
     "gpt-3.5-turbo": {
-        "input": 0.50,   # $0.50 per 1M input tokens
+        "input": 0.50,  # $0.50 per 1M input tokens
         "output": 1.50,  # $1.50 per 1M output tokens
     },
 }
@@ -31,6 +32,7 @@ OPENAI_PRICING = {
 @dataclass
 class UsageStats:
     """Statistics for a single API call or operation."""
+
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
@@ -102,7 +104,9 @@ class CostTracker:
         duration_minutes = self.transcription_duration_seconds / 60.0
         return duration_minutes * 0.006
 
-    def add_translation(self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None):
+    def add_translation(
+        self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None
+    ):
         """
         Track translation operation tokens.
 
@@ -113,12 +117,14 @@ class CostTracker:
         """
         self.translation.prompt_tokens += prompt_tokens
         self.translation.completion_tokens += completion_tokens
-        self.translation.total_tokens += (prompt_tokens + completion_tokens)
+        self.translation.total_tokens += prompt_tokens + completion_tokens
         # Store the model if this is the first translation or update if provided
         if model and not self.translation.model:
             self.translation.model = model
 
-    def add_refinement(self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None):
+    def add_refinement(
+        self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None
+    ):
         """
         Track refinement operation tokens.
 
@@ -129,11 +135,13 @@ class CostTracker:
         """
         self.refinement.prompt_tokens += prompt_tokens
         self.refinement.completion_tokens += completion_tokens
-        self.refinement.total_tokens += (prompt_tokens + completion_tokens)
+        self.refinement.total_tokens += prompt_tokens + completion_tokens
         if model:
             self.refinement.model = model
 
-    def add_summarization(self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None):
+    def add_summarization(
+        self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None
+    ):
         """
         Track summarization operation tokens.
 
@@ -144,7 +152,7 @@ class CostTracker:
         """
         self.summarization.prompt_tokens += prompt_tokens
         self.summarization.completion_tokens += completion_tokens
-        self.summarization.total_tokens += (prompt_tokens + completion_tokens)
+        self.summarization.total_tokens += prompt_tokens + completion_tokens
         if model:
             self.summarization.model = model
 
@@ -152,19 +160,19 @@ class CostTracker:
     def total_cost(self) -> float:
         """Calculate total cost across all operations."""
         return (
-            self.transcription_cost +
-            self.translation.cost_usd() +
-            self.refinement.cost_usd() +
-            self.summarization.cost_usd()
+            self.transcription_cost
+            + self.translation.cost_usd()
+            + self.refinement.cost_usd()
+            + self.summarization.cost_usd()
         )
 
     @property
     def total_tokens(self) -> int:
         """Calculate total tokens used across all operations."""
         return (
-            self.translation.total_tokens +
-            self.refinement.total_tokens +
-            self.summarization.total_tokens
+            self.translation.total_tokens
+            + self.refinement.total_tokens
+            + self.summarization.total_tokens
         )
 
     def print_summary(self):
@@ -180,8 +188,12 @@ class CostTracker:
         if self.transcription_duration_seconds > 0:
             duration_minutes = self.transcription_duration_seconds / 60.0
             logger.info("\nTranscription (Whisper API):")
-            logger.info(f"  Duration:      {duration_minutes:.2f} minutes ({self.transcription_duration_seconds:.1f} seconds)")
-            logger.info(f"  Cost:          {format_orange(f'${self.transcription_cost:.4f}')} (at $0.006/min)")
+            logger.info(
+                f"  Duration:      {duration_minutes:.2f} minutes ({self.transcription_duration_seconds:.1f} seconds)"
+            )
+            logger.info(
+                f"  Cost:          {format_orange(f'${self.transcription_cost:.4f}')} (at $0.006/min)"
+            )
 
         if self.translation.total_tokens > 0:
             model_name = self.translation.model or "gpt-4"
@@ -189,7 +201,9 @@ class CostTracker:
             logger.info(f"  Input tokens:  {self.translation.prompt_tokens:,}")
             logger.info(f"  Output tokens: {self.translation.completion_tokens:,}")
             logger.info(f"  Total tokens:  {self.translation.total_tokens:,}")
-            logger.info(f"  Cost:          {format_orange(f'${self.translation.cost_usd():.4f}')}")
+            logger.info(
+                f"  Cost:          {format_orange(f'${self.translation.cost_usd():.4f}')}"
+            )
 
         if self.refinement.total_tokens > 0:
             model_name = self.refinement.model or "gpt-4"
@@ -197,7 +211,9 @@ class CostTracker:
             logger.info(f"  Input tokens:  {self.refinement.prompt_tokens:,}")
             logger.info(f"  Output tokens: {self.refinement.completion_tokens:,}")
             logger.info(f"  Total tokens:  {self.refinement.total_tokens:,}")
-            logger.info(f"  Cost:          {format_orange(f'${self.refinement.cost_usd():.4f}')}")
+            logger.info(
+                f"  Cost:          {format_orange(f'${self.refinement.cost_usd():.4f}')}"
+            )
 
         if self.summarization.total_tokens > 0:
             model_name = self.summarization.model or "gpt-4"
@@ -205,11 +221,15 @@ class CostTracker:
             logger.info(f"  Input tokens:  {self.summarization.prompt_tokens:,}")
             logger.info(f"  Output tokens: {self.summarization.completion_tokens:,}")
             logger.info(f"  Total tokens:  {self.summarization.total_tokens:,}")
-            logger.info(f"  Cost:          {format_orange(f'${self.summarization.cost_usd():.4f}')}")
+            logger.info(
+                f"  Cost:          {format_orange(f'${self.summarization.cost_usd():.4f}')}"
+            )
 
         logger.info("\n" + "-" * 60)
         logger.info(f"TOTAL TOKENS: {self.total_tokens:,}")
-        logger.info(f"TOTAL COST (estimated): {format_orange(f'${self.total_cost:.4f}')} USD")
+        logger.info(
+            f"TOTAL COST (estimated): {format_orange(f'${self.total_cost:.4f}')} USD"
+        )
         logger.info("=" * 60)
 
 

@@ -1,6 +1,7 @@
 """
 Tests for downloader module
 """
+
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
@@ -21,7 +22,8 @@ def temp_dir():
 def downloader(temp_dir, monkeypatch):
     """Create downloader with temp directory"""
     from src import config
-    monkeypatch.setattr(config.settings, 'TEMP_DIR', temp_dir)
+
+    monkeypatch.setattr(config.settings, "TEMP_DIR", temp_dir)
     return YouTubeDownloader()
 
 
@@ -33,36 +35,36 @@ class TestYouTubeDownloader:
         assert downloader.temp_dir == temp_dir
         assert downloader.progress_bar is None
 
-    @patch('src.downloader.yt_dlp.YoutubeDL')
+    @patch("src.downloader.yt_dlp.YoutubeDL")
     def test_extract_metadata(self, mock_yt_dlp, downloader):
         """Test metadata extraction"""
         mock_ydl_instance = MagicMock()
         mock_yt_dlp.return_value.__enter__.return_value = mock_ydl_instance
 
         mock_info = {
-            'title': 'Test Video',
-            'duration': 180,
-            'uploader': 'Test Channel',
-            'view_count': 1000
+            "title": "Test Video",
+            "duration": 180,
+            "uploader": "Test Channel",
+            "view_count": 1000,
         }
         mock_ydl_instance.extract_info.return_value = mock_info
 
         url = "https://www.youtube.com/watch?v=test"
         metadata = downloader.extract_metadata(url)
 
-        assert metadata['title'] == 'Test Video'
-        assert metadata['duration'] == 180
+        assert metadata["title"] == "Test Video"
+        assert metadata["duration"] == 180
         mock_ydl_instance.extract_info.assert_called_once_with(url, download=False)
 
-    @patch('src.downloader.yt_dlp.YoutubeDL')
+    @patch("src.downloader.yt_dlp.YoutubeDL")
     def test_download_audio(self, mock_yt_dlp, downloader, temp_dir):
         """Test audio download"""
         mock_ydl_instance = MagicMock()
         mock_yt_dlp.return_value.__enter__.return_value = mock_ydl_instance
 
         mock_info = {
-            'title': 'Test Video',
-            'duration': 180,
+            "title": "Test Video",
+            "duration": 180,
         }
         mock_ydl_instance.extract_info.return_value = mock_info
 
@@ -74,16 +76,16 @@ class TestYouTubeDownloader:
         result_path, title, duration, metadata = downloader.download_audio(url)
 
         assert result_path.exists()
-        assert title == 'Test Video'
+        assert title == "Test Video"
         assert duration == 180
         mock_ydl_instance.download.assert_called_once()
 
     def test_progress_hook_downloading(self, downloader):
         """Test progress hook during download"""
         d = {
-            'status': 'downloading',
-            'total_bytes': 1000000,
-            'downloaded_bytes': 500000
+            "status": "downloading",
+            "total_bytes": 1000000,
+            "downloaded_bytes": 500000,
         }
 
         downloader._progress_hook(d)
@@ -95,27 +97,27 @@ class TestYouTubeDownloader:
         """Test progress hook when finished"""
         # First trigger downloading to create progress bar
         d_downloading = {
-            'status': 'downloading',
-            'total_bytes': 1000000,
-            'downloaded_bytes': 500000
+            "status": "downloading",
+            "total_bytes": 1000000,
+            "downloaded_bytes": 500000,
         }
         downloader._progress_hook(d_downloading)
 
         # Then trigger finished
-        d_finished = {'status': 'finished'}
+        d_finished = {"status": "finished"}
         downloader._progress_hook(d_finished)
 
         assert downloader.progress_bar is None
 
-    @patch('src.downloader.yt_dlp.YoutubeDL')
+    @patch("src.downloader.yt_dlp.YoutubeDL")
     def test_download_audio_file_not_found(self, mock_yt_dlp, downloader):
         """Test error when downloaded file is missing"""
         mock_ydl_instance = MagicMock()
         mock_yt_dlp.return_value.__enter__.return_value = mock_ydl_instance
 
         mock_info = {
-            'title': 'Missing Video',
-            'duration': 180,
+            "title": "Missing Video",
+            "duration": 180,
         }
         mock_ydl_instance.extract_info.return_value = mock_info
 
@@ -132,6 +134,6 @@ class TestYouTubeDownloader:
         url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
         metadata = downloader.extract_metadata(url)
 
-        assert 'title' in metadata
-        assert 'duration' in metadata
-        assert metadata['duration'] > 0
+        assert "title" in metadata
+        assert "duration" in metadata
+        assert metadata["duration"] > 0

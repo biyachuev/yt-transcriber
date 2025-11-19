@@ -1,6 +1,7 @@
 """
 Tests for video_processor module.
 """
+
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
@@ -69,7 +70,9 @@ def test_extract_audio_success(mock_run, video_processor, mock_video_file, tmp_p
 
 
 @patch("subprocess.run")
-def test_extract_audio_already_exists(mock_run, video_processor, mock_video_file, tmp_path):
+def test_extract_audio_already_exists(
+    mock_run, video_processor, mock_video_file, tmp_path
+):
     """Test extract_audio when output file already exists."""
     video_processor.temp_dir = tmp_path
 
@@ -85,15 +88,15 @@ def test_extract_audio_already_exists(mock_run, video_processor, mock_video_file
 
 
 @patch("subprocess.run")
-def test_extract_audio_ffmpeg_fails(mock_run, video_processor, mock_video_file, tmp_path):
+def test_extract_audio_ffmpeg_fails(
+    mock_run, video_processor, mock_video_file, tmp_path
+):
     """Test extract_audio when ffmpeg fails."""
     video_processor.temp_dir = tmp_path
 
     # Mock ffmpeg failure
     mock_run.side_effect = subprocess.CalledProcessError(
-        returncode=1,
-        cmd="ffmpeg",
-        stderr="FFmpeg error"
+        returncode=1, cmd="ffmpeg", stderr="FFmpeg error"
     )
 
     with pytest.raises(RuntimeError) as exc_info:
@@ -103,7 +106,9 @@ def test_extract_audio_ffmpeg_fails(mock_run, video_processor, mock_video_file, 
 
 
 @patch("subprocess.run")
-def test_extract_audio_ffmpeg_not_found(mock_run, video_processor, mock_video_file, tmp_path):
+def test_extract_audio_ffmpeg_not_found(
+    mock_run, video_processor, mock_video_file, tmp_path
+):
     """Test extract_audio when ffmpeg is not installed."""
     video_processor.temp_dir = tmp_path
 
@@ -117,7 +122,9 @@ def test_extract_audio_ffmpeg_not_found(mock_run, video_processor, mock_video_fi
 
 
 @patch("subprocess.run")
-def test_extract_audio_output_not_created(mock_run, video_processor, mock_video_file, tmp_path):
+def test_extract_audio_output_not_created(
+    mock_run, video_processor, mock_video_file, tmp_path
+):
     """Test extract_audio when output file is not created."""
     video_processor.temp_dir = tmp_path
 
@@ -152,9 +159,7 @@ def test_get_video_duration_failure(mock_run, video_processor, mock_video_file):
     """Test get_video_duration when ffprobe fails."""
     # Mock ffprobe failure
     mock_run.side_effect = subprocess.CalledProcessError(
-        returncode=1,
-        cmd="ffprobe",
-        stderr="Error"
+        returncode=1, cmd="ffprobe", stderr="Error"
     )
 
     duration = video_processor.get_video_duration(mock_video_file)

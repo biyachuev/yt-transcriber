@@ -1,4 +1,5 @@
 """Edge case tests for various modules"""
+
 import pytest
 from pathlib import Path
 import tempfile
@@ -53,8 +54,8 @@ class TestTranscriberEdgeCases:
         segment = TranscriptionSegment(start=0, end=5, text=text)
         assert "🎉" in segment.text
 
-    @patch('src.transcriber.torch')
-    @patch('src.transcriber.whisper')
+    @patch("src.transcriber.torch")
+    @patch("src.transcriber.whisper")
     def test_segments_to_text_empty_list(self, mock_whisper, mock_torch):
         """Test converting empty segment list"""
         mock_torch.cuda.is_available.return_value = False
@@ -64,8 +65,8 @@ class TestTranscriberEdgeCases:
         result = transcriber.segments_to_text([])
         assert result == ""
 
-    @patch('src.transcriber.torch')
-    @patch('src.transcriber.whisper')
+    @patch("src.transcriber.torch")
+    @patch("src.transcriber.whisper")
     def test_segments_to_text_single_segment(self, mock_whisper, mock_torch):
         """Test converting single segment"""
         mock_torch.cuda.is_available.return_value = False
@@ -80,7 +81,7 @@ class TestTranscriberEdgeCases:
 class TestTranslatorEdgeCases:
     """Edge cases for Translator"""
 
-    @patch('src.translator.torch')
+    @patch("src.translator.torch")
     def test_translate_empty_text(self, mock_torch):
         """Test translating empty text"""
         mock_torch.cuda.is_available.return_value = False
@@ -90,7 +91,7 @@ class TestTranslatorEdgeCases:
         result = translator.translate_text("")
         assert result == ""
 
-    @patch('src.translator.torch')
+    @patch("src.translator.torch")
     def test_translate_only_whitespace(self, mock_torch):
         """Test translating only whitespace"""
         mock_torch.cuda.is_available.return_value = False
@@ -109,7 +110,7 @@ class TestTextReaderEdgeCases:
         """Test reading file with BOM"""
         test_file = temp_dir / "bom.txt"
         # Write with BOM
-        with open(test_file, 'w', encoding='utf-8-sig') as f:
+        with open(test_file, "w", encoding="utf-8-sig") as f:
             f.write("Test content")
 
         reader = TextReader()
@@ -153,31 +154,31 @@ class TestTextReaderEdgeCases:
         """Test language detection on very short text"""
         reader = TextReader()
         result = reader.detect_language("Hi")
-        assert result in ['en', 'ru']
+        assert result in ["en", "ru"]
 
     def test_detect_language_numbers_only(self):
         """Test language detection on numbers"""
         reader = TextReader()
         result = reader.detect_language("123456")
-        assert result in ['en', 'ru']
+        assert result in ["en", "ru"]
 
     def test_detect_language_mixed(self):
         """Test language detection on mixed content"""
         reader = TextReader()
         text = "English текст 123 !@#$%"
         result = reader.detect_language(text)
-        assert result in ['en', 'ru']
+        assert result in ["en", "ru"]
 
 
 class TestTextRefinerEdgeCases:
     """Edge cases for TextRefiner"""
 
-    @patch('src.text_refiner.requests.get')
+    @patch("src.text_refiner.requests.get")
     def test_split_very_long_sentence(self, mock_get):
         """Test splitting very long sentence"""
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {'models': [{'name': 'qwen2.5:3b'}]}
+        mock_response.json.return_value = {"models": [{"name": "qwen2.5:3b"}]}
         mock_get.return_value = mock_response
 
         refiner = TextRefiner(model_name="qwen2.5:3b")
@@ -189,12 +190,12 @@ class TestTextRefinerEdgeCases:
         # Should split into multiple chunks
         assert len(chunks) >= 1
 
-    @patch('src.text_refiner.requests.get')
+    @patch("src.text_refiner.requests.get")
     def test_split_only_punctuation(self, mock_get):
         """Test splitting text with only punctuation"""
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {'models': [{'name': 'qwen2.5:3b'}]}
+        mock_response.json.return_value = {"models": [{"name": "qwen2.5:3b"}]}
         mock_get.return_value = mock_response
 
         refiner = TextRefiner(model_name="qwen2.5:3b")
@@ -202,17 +203,17 @@ class TestTextRefinerEdgeCases:
         chunks = refiner._split_text_into_chunks(text)
         assert len(chunks) >= 1
 
-    @patch('src.text_refiner.requests.get')
+    @patch("src.text_refiner.requests.get")
     def test_detect_topic_empty_response(self, mock_get):
         """Test topic detection with empty response"""
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {'models': [{'name': 'qwen2.5:3b'}]}
+        mock_response.json.return_value = {"models": [{"name": "qwen2.5:3b"}]}
         mock_get.return_value = mock_response
 
         refiner = TextRefiner(model_name="qwen2.5:3b")
 
-        with patch.object(refiner, '_call_ollama', return_value=""):
+        with patch.object(refiner, "_call_ollama", return_value=""):
             topic = refiner._detect_topic("Some text")
             assert topic == "общая"  # Default fallback
 
@@ -223,14 +224,15 @@ class TestDownloaderEdgeCases:
     def test_progress_hook_with_estimate(self, temp_dir, monkeypatch):
         """Test progress hook with estimated bytes"""
         from src import config
-        monkeypatch.setattr(config.settings, 'TEMP_DIR', temp_dir)
+
+        monkeypatch.setattr(config.settings, "TEMP_DIR", temp_dir)
 
         downloader = YouTubeDownloader()
 
         d = {
-            'status': 'downloading',
-            'total_bytes_estimate': 1000000,  # Only estimate available
-            'downloaded_bytes': 500000
+            "status": "downloading",
+            "total_bytes_estimate": 1000000,  # Only estimate available
+            "downloaded_bytes": 500000,
         }
 
         downloader._progress_hook(d)
@@ -239,14 +241,12 @@ class TestDownloaderEdgeCases:
     def test_progress_hook_no_total(self, temp_dir, monkeypatch):
         """Test progress hook without total bytes"""
         from src import config
-        monkeypatch.setattr(config.settings, 'TEMP_DIR', temp_dir)
+
+        monkeypatch.setattr(config.settings, "TEMP_DIR", temp_dir)
 
         downloader = YouTubeDownloader()
 
-        d = {
-            'status': 'downloading',
-            'downloaded_bytes': 500000
-        }
+        d = {"status": "downloading", "downloaded_bytes": 500000}
 
         downloader._progress_hook(d)
         # Should handle missing total gracefully
@@ -294,7 +294,7 @@ class TestUtilsEdgeCases:
     def test_detect_language_empty(self):
         """Test language detection on empty string"""
         result = detect_language("")
-        assert result in ['en', 'ru']
+        assert result in ["en", "ru"]
 
     def test_format_timestamp_very_large(self):
         """Test formatting very large timestamp"""

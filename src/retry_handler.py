@@ -1,6 +1,7 @@
 """
 Retry mechanism with exponential backoff for network operations.
 """
+
 import time
 import functools
 from typing import Callable, Any, Type, Tuple, Optional
@@ -81,7 +82,9 @@ class APICallTracker:
 
         # Check if cooldown period has passed
         if datetime.now() >= self.circuit_open_until:
-            logger.info("⏰ Circuit breaker cooldown period ended. Attempting to resume...")
+            logger.info(
+                "⏰ Circuit breaker cooldown period ended. Attempting to resume..."
+            )
             self.circuit_open = False
             self.consecutive_errors = 0
             return True
@@ -119,9 +122,7 @@ NETWORK_EXCEPTIONS = (
 )
 
 # API rate limit exceptions
-RATE_LIMIT_EXCEPTIONS = (
-    RateLimitError,
-)
+RATE_LIMIT_EXCEPTIONS = (RateLimitError,)
 
 
 def retry_with_backoff(
@@ -146,6 +147,7 @@ def retry_with_backoff(
     Returns:
         Decorated function with retry logic
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
@@ -209,13 +211,16 @@ def retry_with_backoff(
 
                 except Exception as e:
                     # Non-retryable exceptions - raise immediately
-                    logger.error(f"Non-retryable error in {func.__name__}: {type(e).__name__}: {e}")
+                    logger.error(
+                        f"Non-retryable error in {func.__name__}: {type(e).__name__}: {e}"
+                    )
                     raise
 
             # Should not reach here, but just in case
             raise RuntimeError(f"Unexpected retry loop exit in {func.__name__}")
 
         return wrapper
+
     return decorator
 
 
@@ -249,7 +254,7 @@ def check_internet_connection(timeout: float = 5.0) -> bool:
 def wait_for_internet(
     max_wait_time: float = 300.0,
     check_interval: float = 5.0,
-    show_progress: bool = True
+    show_progress: bool = True,
 ) -> bool:
     """
     Wait for internet connection to be restored.
@@ -339,7 +344,9 @@ class RetryableOperation:
             if self.retry_count <= self.max_retries:
                 # Check if internet is available
                 if not check_internet_connection():
-                    logger.warning(f"No internet connection during {self.operation_name}")
+                    logger.warning(
+                        f"No internet connection during {self.operation_name}"
+                    )
                     # Wait for internet to come back (up to 5 minutes)
                     if not wait_for_internet(max_wait_time=300):
                         logger.error("Internet connection timeout. Cannot continue.")
@@ -365,6 +372,7 @@ class RetryableOperation:
 
 
 # Convenience decorators for common retry scenarios
+
 
 def retry_network_operation(max_retries: int = 5):
     """Decorator for network operations with standard retry logic."""
@@ -403,5 +411,7 @@ def print_api_stats():
     logger.info(f"Failed calls: {stats['total_errors']}")
     logger.info(f"Success rate: {(1 - stats['error_rate']) * 100:.1f}%")
     logger.info(f"Consecutive errors: {stats['consecutive_errors']}")
-    logger.info(f"Circuit breaker: {'🔴 OPEN' if stats['circuit_open'] else '🟢 CLOSED'}")
+    logger.info(
+        f"Circuit breaker: {'🔴 OPEN' if stats['circuit_open'] else '🟢 CLOSED'}"
+    )
     logger.info("=" * 60)

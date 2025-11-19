@@ -1,6 +1,7 @@
 """
 Utilities for reading text-based documents (DOCX, Markdown, plain text, PDF).
 """
+
 from pathlib import Path
 from typing import Optional
 import re
@@ -78,7 +79,11 @@ class TextReader:
 
             full_text = "\n\n".join(paragraphs)
 
-            logger.info("Extracted %d paragraphs, %d characters", len(paragraphs), len(full_text))
+            logger.info(
+                "Extracted %d paragraphs, %d characters",
+                len(paragraphs),
+                len(full_text),
+            )
 
             return full_text
 
@@ -219,7 +224,7 @@ class TextReader:
         Returns:
             'ru' for Russian, 'en' for English.
         """
-        cyrillic_chars = sum(1 for c in text if "\u0400" <= c <= "\u04FF")
+        cyrillic_chars = sum(1 for c in text if "\u0400" <= c <= "\u04ff")
         total_chars = sum(1 for c in text if c.isalpha())
 
         if total_chars == 0:

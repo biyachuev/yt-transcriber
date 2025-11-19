@@ -1,4 +1,5 @@
 """Integration tests for main module"""
+
 import pytest
 from pathlib import Path
 import tempfile
@@ -9,7 +10,7 @@ from src.main import (
     process_text_file,
     process_youtube_video,
     process_local_audio,
-    process_local_video
+    process_local_video,
 )
 
 
@@ -28,7 +29,7 @@ class TestLoadPromptFromFile:
         """Test loading valid prompt from file"""
         prompt_file = temp_dir / "prompt.txt"
         content = "Test prompt content"
-        with open(prompt_file, 'w', encoding='utf-8') as f:
+        with open(prompt_file, "w", encoding="utf-8") as f:
             f.write(content)
 
         result = load_prompt_from_file(str(prompt_file))
@@ -38,7 +39,7 @@ class TestLoadPromptFromFile:
         """Test that prompt is stripped"""
         prompt_file = temp_dir / "prompt.txt"
         content = "  Test prompt  \n\n"
-        with open(prompt_file, 'w', encoding='utf-8') as f:
+        with open(prompt_file, "w", encoding="utf-8") as f:
             f.write(content)
 
         result = load_prompt_from_file(str(prompt_file))
@@ -48,7 +49,7 @@ class TestLoadPromptFromFile:
         """Test that long prompt is truncated"""
         prompt_file = temp_dir / "prompt.txt"
         content = "A" * 1000
-        with open(prompt_file, 'w', encoding='utf-8') as f:
+        with open(prompt_file, "w", encoding="utf-8") as f:
             f.write(content)
 
         result = load_prompt_from_file(str(prompt_file))
@@ -63,21 +64,23 @@ class TestLoadPromptFromFile:
 class TestProcessTextFile:
     """Integration tests for process_text_file function"""
 
-    @patch('src.main.TextReader')
-    @patch('src.main.DocumentWriter')
-    def test_process_text_file_basic(self, mock_writer_class, mock_reader_class, temp_dir):
+    @patch("src.main.TextReader")
+    @patch("src.main.DocumentWriter")
+    def test_process_text_file_basic(
+        self, mock_writer_class, mock_reader_class, temp_dir
+    ):
         """Test basic text file processing"""
         # Mock TextReader
         mock_reader = MagicMock()
         mock_reader.read_file.return_value = "Test content\n\nSecond paragraph"
-        mock_reader.detect_language.return_value = 'en'
+        mock_reader.detect_language.return_value = "en"
         mock_reader_class.return_value = mock_reader
 
         # Mock DocumentWriter
         mock_writer = MagicMock()
         mock_writer.create_documents.return_value = (
             temp_dir / "test.docx",
-            temp_dir / "test.md"
+            temp_dir / "test.md",
         )
         mock_writer_class.return_value = mock_writer
 
@@ -92,9 +95,11 @@ class TestProcessTextFile:
         mock_reader.read_file.assert_called_once_with(str(test_file))
         mock_reader.detect_language.assert_called_once()
         # Writer creates documents (called at least once)
-        assert mock_writer.create_documents.call_count >= 0  # May not be called if no translation
+        assert (
+            mock_writer.create_documents.call_count >= 0
+        )  # May not be called if no translation
 
-    @patch('src.main.TextReader')
+    @patch("src.main.TextReader")
     def test_process_text_file_not_found(self, mock_reader_class):
         """Test handling of nonexistent file"""
         mock_reader = MagicMock()
@@ -105,15 +110,17 @@ class TestProcessTextFile:
         process_text_file("/nonexistent/file.txt")
         mock_reader.read_file.assert_called_once()
 
-    @patch('src.translator.Translator')
-    @patch('src.main.DocumentWriter')
-    @patch('src.main.TextReader')
-    def test_process_text_file_with_translation(self, mock_reader_class, mock_writer_class, mock_translator_class, temp_dir):
+    @patch("src.translator.Translator")
+    @patch("src.main.DocumentWriter")
+    @patch("src.main.TextReader")
+    def test_process_text_file_with_translation(
+        self, mock_reader_class, mock_writer_class, mock_translator_class, temp_dir
+    ):
         """Test text file processing with translation"""
         # Mock TextReader
         mock_reader = MagicMock()
         mock_reader.read_file.return_value = "Test content"
-        mock_reader.detect_language.return_value = 'en'
+        mock_reader.detect_language.return_value = "en"
         mock_reader_class.return_value = mock_reader
 
         # Mock Translator
@@ -132,22 +139,24 @@ class TestProcessTextFile:
         test_file.write_text("Test content")
 
         # Process with translation
-        process_text_file(str(test_file), translate_methods=['NLLB'])
+        process_text_file(str(test_file), translate_methods=["NLLB"])
 
         # Verify reader was called
         mock_reader.read_file.assert_called_once_with(str(test_file))
         # Verify translator was created
         mock_translator_class.assert_called_once()
 
-    @patch('src.text_refiner.TextRefiner')
-    @patch('src.main.DocumentWriter')
-    @patch('src.main.TextReader')
-    def test_process_text_file_with_refine(self, mock_reader_class, mock_writer_class, mock_refiner_class, temp_dir):
+    @patch("src.text_refiner.TextRefiner")
+    @patch("src.main.DocumentWriter")
+    @patch("src.main.TextReader")
+    def test_process_text_file_with_refine(
+        self, mock_reader_class, mock_writer_class, mock_refiner_class, temp_dir
+    ):
         """Test text file processing with refinement"""
         # Mock TextReader
         mock_reader = MagicMock()
         mock_reader.read_file.return_value = "Test content"
-        mock_reader.detect_language.return_value = 'en'
+        mock_reader.detect_language.return_value = "en"
         mock_reader_class.return_value = mock_reader
 
         # Mock TextRefiner
@@ -165,7 +174,7 @@ class TestProcessTextFile:
         test_file.write_text("Test content")
 
         # Process with refinement
-        process_text_file(str(test_file), refine_model='qwen2.5:3b')
+        process_text_file(str(test_file), refine_model="qwen2.5:3b")
 
         # Verify reader was called
         mock_reader.read_file.assert_called_once_with(str(test_file))
@@ -188,13 +197,13 @@ class TestEdgeCases:
         """Test loading prompt with unicode characters"""
         prompt_file = temp_dir / "unicode.txt"
         content = "Тест 测试 🎉"
-        with open(prompt_file, 'w', encoding='utf-8') as f:
+        with open(prompt_file, "w", encoding="utf-8") as f:
             f.write(content)
 
         result = load_prompt_from_file(str(prompt_file))
         assert result == content
 
-    @patch('src.main.TextReader')
+    @patch("src.main.TextReader")
     def test_process_text_file_invalid_format(self, mock_reader_class):
         """Test handling of invalid file format"""
         mock_reader = MagicMock()
@@ -205,13 +214,15 @@ class TestEdgeCases:
         process_text_file("test.xyz")
         mock_reader.read_file.assert_called_once()
 
-    @patch('src.main.TextReader')
-    @patch('src.main.DocumentWriter')
-    def test_process_text_file_empty_content(self, mock_writer_class, mock_reader_class):
+    @patch("src.main.TextReader")
+    @patch("src.main.DocumentWriter")
+    def test_process_text_file_empty_content(
+        self, mock_writer_class, mock_reader_class
+    ):
         """Test processing file with empty content"""
         mock_reader = MagicMock()
         mock_reader.read_file.return_value = ""
-        mock_reader.detect_language.return_value = 'en'
+        mock_reader.detect_language.return_value = "en"
         mock_reader_class.return_value = mock_reader
 
         mock_writer = MagicMock()
@@ -221,13 +232,15 @@ class TestEdgeCases:
         process_text_file("empty.txt")
         mock_reader.read_file.assert_called_once()
 
-    @patch('src.main.TextReader')
-    @patch('src.main.DocumentWriter')
-    def test_process_text_file_single_paragraph(self, mock_writer_class, mock_reader_class):
+    @patch("src.main.TextReader")
+    @patch("src.main.DocumentWriter")
+    def test_process_text_file_single_paragraph(
+        self, mock_writer_class, mock_reader_class
+    ):
         """Test processing file with single paragraph"""
         mock_reader = MagicMock()
         mock_reader.read_file.return_value = "Single paragraph"
-        mock_reader.detect_language.return_value = 'en'
+        mock_reader.detect_language.return_value = "en"
         mock_reader_class.return_value = mock_reader
 
         mock_writer = MagicMock()
@@ -236,15 +249,17 @@ class TestEdgeCases:
         process_text_file("single.txt")
         mock_reader.read_file.assert_called_once()
 
-    @patch('src.main.TextReader')
-    @patch('src.main.DocumentWriter')
-    def test_process_text_file_many_paragraphs(self, mock_writer_class, mock_reader_class):
+    @patch("src.main.TextReader")
+    @patch("src.main.DocumentWriter")
+    def test_process_text_file_many_paragraphs(
+        self, mock_writer_class, mock_reader_class
+    ):
         """Test processing file with many paragraphs"""
         mock_reader = MagicMock()
         # Create 100 paragraphs
         content = "\n\n".join([f"Paragraph {i}" for i in range(100)])
         mock_reader.read_file.return_value = content
-        mock_reader.detect_language.return_value = 'en'
+        mock_reader.detect_language.return_value = "en"
         mock_reader_class.return_value = mock_reader
 
         mock_writer = MagicMock()
@@ -257,9 +272,9 @@ class TestEdgeCases:
 class TestCLISmokeTests:
     """Smoke tests for main CLI entry points - verify basic flow without external APIs"""
 
-    @patch('src.main.Transcriber')
-    @patch('src.main.DocumentWriter')
-    @patch('src.main.YouTubeDownloader')
+    @patch("src.main.Transcriber")
+    @patch("src.main.DocumentWriter")
+    @patch("src.main.YouTubeDownloader")
     def test_process_youtube_video_basic_flow(
         self, mock_downloader_class, mock_writer_class, mock_transcriber_class
     ):
@@ -267,37 +282,37 @@ class TestCLISmokeTests:
         # Mock downloader
         mock_downloader = MagicMock()
         mock_downloader.extract_metadata.return_value = {
-            'title': 'Test Video',
-            'description': 'Test description'
+            "title": "Test Video",
+            "description": "Test description",
         }
         # download_audio returns: (audio_path, video_title, duration, metadata)
         mock_downloader.download_audio.return_value = (
-            '/tmp/test_audio.mp3',
-            'Test Video',
+            "/tmp/test_audio.mp3",
+            "Test Video",
             120.0,
-            {'title': 'Test Video', 'description': 'Test description'}
+            {"title": "Test Video", "description": "Test description"},
         )
         mock_downloader_class.return_value = mock_downloader
 
         # Mock transcriber
         from src.transcriber import TranscriptionSegment
+
         mock_transcriber = MagicMock()
         mock_transcriber.transcribe.return_value = [
             TranscriptionSegment(0, 5, "Hello"),
-            TranscriptionSegment(5, 10, "World")
+            TranscriptionSegment(5, 10, "World"),
         ]
         mock_transcriber.segments_to_text.return_value = "Hello World"
         mock_transcriber_class.return_value = mock_transcriber
 
         # Mock writer
         mock_writer = MagicMock()
-        mock_writer.create_from_segments.return_value = ('/tmp/out.docx', '/tmp/out.md')
+        mock_writer.create_from_segments.return_value = ("/tmp/out.docx", "/tmp/out.md")
         mock_writer_class.return_value = mock_writer
 
         # Run the function
         process_youtube_video(
-            url='https://youtube.com/watch?v=test',
-            transcribe_method='whisper_local'
+            url="https://youtube.com/watch?v=test", transcribe_method="whisper_local"
         )
 
         # Verify flow
@@ -305,8 +320,8 @@ class TestCLISmokeTests:
         mock_transcriber.transcribe.assert_called_once()
         mock_writer.create_from_segments.assert_called()
 
-    @patch('src.main.Transcriber')
-    @patch('src.main.DocumentWriter')
+    @patch("src.main.Transcriber")
+    @patch("src.main.DocumentWriter")
     def test_process_local_audio_basic_flow(
         self, mock_writer_class, mock_transcriber_class, temp_dir
     ):
@@ -317,6 +332,7 @@ class TestCLISmokeTests:
 
         # Mock transcriber
         from src.transcriber import TranscriptionSegment
+
         mock_transcriber = MagicMock()
         mock_transcriber.transcribe.return_value = [
             TranscriptionSegment(0, 5, "Test audio")
@@ -326,24 +342,27 @@ class TestCLISmokeTests:
 
         # Mock writer
         mock_writer = MagicMock()
-        mock_writer.create_from_segments.return_value = ('/tmp/out.docx', '/tmp/out.md')
+        mock_writer.create_from_segments.return_value = ("/tmp/out.docx", "/tmp/out.md")
         mock_writer_class.return_value = mock_writer
 
         # Run the function
         process_local_audio(
-            audio_path=str(audio_file),
-            transcribe_method='whisper_local'
+            audio_path=str(audio_file), transcribe_method="whisper_local"
         )
 
         # Verify flow
         mock_transcriber.transcribe.assert_called_once()
         mock_writer.create_from_segments.assert_called()
 
-    @patch('src.main.Transcriber')
-    @patch('src.main.DocumentWriter')
-    @patch('src.main.VideoProcessor')
+    @patch("src.main.Transcriber")
+    @patch("src.main.DocumentWriter")
+    @patch("src.main.VideoProcessor")
     def test_process_local_video_basic_flow(
-        self, mock_video_processor_class, mock_writer_class, mock_transcriber_class, temp_dir
+        self,
+        mock_video_processor_class,
+        mock_writer_class,
+        mock_transcriber_class,
+        temp_dir,
     ):
         """Smoke test: Local video file processing basic flow"""
         # Create a fake video file
@@ -352,11 +371,12 @@ class TestCLISmokeTests:
 
         # Mock video processor
         mock_video_processor = MagicMock()
-        mock_video_processor.extract_audio.return_value = '/tmp/extracted_audio.mp3'
+        mock_video_processor.extract_audio.return_value = "/tmp/extracted_audio.mp3"
         mock_video_processor_class.return_value = mock_video_processor
 
         # Mock transcriber
         from src.transcriber import TranscriptionSegment
+
         mock_transcriber = MagicMock()
         mock_transcriber.transcribe.return_value = [
             TranscriptionSegment(0, 5, "Video content")
@@ -366,13 +386,12 @@ class TestCLISmokeTests:
 
         # Mock writer
         mock_writer = MagicMock()
-        mock_writer.create_from_segments.return_value = ('/tmp/out.docx', '/tmp/out.md')
+        mock_writer.create_from_segments.return_value = ("/tmp/out.docx", "/tmp/out.md")
         mock_writer_class.return_value = mock_writer
 
         # Run the function
         process_local_video(
-            video_path=str(video_file),
-            transcribe_method='whisper_local'
+            video_path=str(video_file), transcribe_method="whisper_local"
         )
 
         # Verify flow
@@ -380,9 +399,9 @@ class TestCLISmokeTests:
         mock_transcriber.transcribe.assert_called_once()
         mock_writer.create_from_segments.assert_called()
 
-    @patch('src.translator.Translator')
-    @patch('src.main.Transcriber')
-    @patch('src.main.DocumentWriter')
+    @patch("src.translator.Translator")
+    @patch("src.main.Transcriber")
+    @patch("src.main.DocumentWriter")
     def test_process_local_audio_with_translation(
         self, mock_writer_class, mock_transcriber_class, mock_translator_class, temp_dir
     ):
@@ -393,10 +412,9 @@ class TestCLISmokeTests:
 
         # Mock transcriber
         from src.transcriber import TranscriptionSegment
+
         mock_transcriber = MagicMock()
-        mock_transcriber.transcribe.return_value = [
-            TranscriptionSegment(0, 5, "Hello")
-        ]
+        mock_transcriber.transcribe.return_value = [TranscriptionSegment(0, 5, "Hello")]
         mock_transcriber.segments_to_text.return_value = "Hello"
         mock_transcriber_class.return_value = mock_transcriber
 
@@ -410,14 +428,14 @@ class TestCLISmokeTests:
 
         # Mock writer
         mock_writer = MagicMock()
-        mock_writer.create_from_segments.return_value = ('/tmp/out.docx', '/tmp/out.md')
+        mock_writer.create_from_segments.return_value = ("/tmp/out.docx", "/tmp/out.md")
         mock_writer_class.return_value = mock_writer
 
         # Run with translation
         process_local_audio(
             audio_path=str(audio_file),
-            transcribe_method='whisper_local',
-            translate_methods=['NLLB']
+            transcribe_method="whisper_local",
+            translate_methods=["NLLB"],
         )
 
         # Verify translation was called

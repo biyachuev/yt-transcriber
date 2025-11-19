@@ -1,6 +1,7 @@
 """
 Text translation utilities (Meta NLLB and future backends).
 """
+
 from typing import List, Optional
 
 import torch
@@ -17,12 +18,19 @@ from .cost_tracker import get_cost_tracker
 class Translator:
     """Translate text using the configured backend (NLLB by default)."""
 
-    def __init__(self, method: str = TranslateOptions.NLLB, model_name: Optional[str] = None, use_cache: bool = True):
+    def __init__(
+        self,
+        method: str = TranslateOptions.NLLB,
+        model_name: Optional[str] = None,
+        use_cache: bool = True,
+    ):
         self.method = method
         # For NLLB, use model_name or default NLLB model
         # For OpenAI, use model_name or default OpenAI translation model
         if method == TranslateOptions.OPENAI_API:
-            self.model_name = model_name if model_name else settings.OPENAI_TRANSLATION_MODEL
+            self.model_name = (
+                model_name if model_name else settings.OPENAI_TRANSLATION_MODEL
+            )
         else:
             self.model_name = model_name if model_name else settings.NLLB_MODEL_NAME
         self.model = None
@@ -31,7 +39,9 @@ class Translator:
         self.device = self._get_device()
         self.use_cache = use_cache
         self.cache = get_cache() if use_cache else None
-        self.rate_limiter = get_openai_rate_limiter() if method == TranslateOptions.OPENAI_API else None
+        self.rate_limiter = (
+            get_openai_rate_limiter() if method == TranslateOptions.OPENAI_API else None
+        )
         logger.info("Translator using device: %s", self.device)
         if method == TranslateOptions.OPENAI_API:
             logger.info("OpenAI translation model: %s", self.model_name)
@@ -211,7 +221,7 @@ class Translator:
                 "source_lang": source_lang,
                 "target_lang": target_lang,
                 "model": self.model_name,
-                "method": "openai_translation"
+                "method": "openai_translation",
             }
             cached_result = self.cache.get("translation", cache_key)
             if cached_result is not None:
@@ -278,7 +288,9 @@ IMPORTANT RULES:
         return result
 
     @retry_api_call(max_retries=5)
-    def _translate_chunk_with_retry(self, client, chunk: str, system_prompt: str) -> str:
+    def _translate_chunk_with_retry(
+        self, client, chunk: str, system_prompt: str
+    ) -> str:
         """
         Translate a single chunk with retry logic.
 
@@ -290,7 +302,12 @@ IMPORTANT RULES:
         Returns:
             Translated text
         """
-        from openai import APIConnectionError, RateLimitError, APITimeoutError, BadRequestError
+        from openai import (
+            APIConnectionError,
+            RateLimitError,
+            APITimeoutError,
+            BadRequestError,
+        )
 
         try:
             # Apply rate limiting
@@ -301,7 +318,7 @@ IMPORTANT RULES:
                 model=self.model_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": chunk}
+                    {"role": "user", "content": chunk},
                 ],
                 temperature=0.3,
                 max_tokens=3000,
@@ -313,7 +330,7 @@ IMPORTANT RULES:
                 cost_tracker.add_translation(
                     response.usage.prompt_tokens,
                     response.usage.completion_tokens,
-                    model=self.model_name
+                    model=self.model_name,
                 )
 
             return response.choices[0].message.content.strip()
@@ -325,7 +342,9 @@ IMPORTANT RULES:
 
         except (APIConnectionError, RateLimitError, APITimeoutError) as e:
             # Retryable errors - let the decorator handle retry logic
-            logger.warning(f"Retryable error during translation: {type(e).__name__}: {e}")
+            logger.warning(
+                f"Retryable error during translation: {type(e).__name__}: {e}"
+            )
             raise  # Re-raise to allow @retry_api_call decorator to retry
 
     def translate_segments(
@@ -349,25 +368,31 @@ IMPORTANT RULES:
         """
         from .transcriber import TranscriptionSegment
 
-        logger.info("Translating %d segments with batch size %d...", len(segments), batch_size)
+        logger.info(
+            "Translating %d segments with batch size %d...", len(segments), batch_size
+        )
 
         # Extract segment data
         segment_data = []
         for seg in segments:
             if hasattr(seg, "text"):
-                segment_data.append({
-                    "text": seg.text,
-                    "start": seg.start,
-                    "end": seg.end,
-                    "speaker": seg.speaker,
-                })
+                segment_data.append(
+                    {
+                        "text": seg.text,
+                        "start": seg.start,
+                        "end": seg.end,
+                        "speaker": seg.speaker,
+                    }
+                )
             elif isinstance(seg, dict):
-                segment_data.append({
-                    "text": seg.get("text", ""),
-                    "start": seg.get("start"),
-                    "end": seg.get("end"),
-                    "speaker": seg.get("speaker"),
-                })
+                segment_data.append(
+                    {
+                        "text": seg.get("text", ""),
+                        "start": seg.get("start"),
+                        "end": seg.get("end"),
+                        "speaker": seg.get("speaker"),
+                    }
+                )
             else:
                 continue
 
@@ -375,8 +400,12 @@ IMPORTANT RULES:
         translated_segments: List[TranscriptionSegment] = []
         total_batches = (len(segment_data) + batch_size - 1) // batch_size
 
-        for batch_idx in tqdm(range(0, len(segment_data), batch_size), desc="Translating segments", total=total_batches):
-            batch = segment_data[batch_idx:batch_idx + batch_size]
+        for batch_idx in tqdm(
+            range(0, len(segment_data), batch_size),
+            desc="Translating segments",
+            total=total_batches,
+        ):
+            batch = segment_data[batch_idx : batch_idx + batch_size]
 
             # Combine batch segments with markers
             batch_text_parts = []
@@ -388,7 +417,9 @@ IMPORTANT RULES:
             combined_text = "\n\n".join(batch_text_parts)
 
             # Translate the entire batch at once
-            translated_combined = self.translate_text(combined_text, source_lang, target_lang)
+            translated_combined = self.translate_text(
+                combined_text, source_lang, target_lang
+            )
 
             # Split back into individual segments
             translated_parts = []
@@ -406,11 +437,15 @@ IMPORTANT RULES:
                         segment_translation = translated_combined[start_idx:]
 
                     # Remove marker and clean up
-                    segment_translation = segment_translation.replace(marker, "").strip()
+                    segment_translation = segment_translation.replace(
+                        marker, ""
+                    ).strip()
                     translated_parts.append(segment_translation)
                 else:
                     # Fallback: use original text if marker not found
-                    logger.warning(f"Marker not found for segment {i} in batch {batch_idx // batch_size}, using original")
+                    logger.warning(
+                        f"Marker not found for segment {i} in batch {batch_idx // batch_size}, using original"
+                    )
                     translated_parts.append(batch[i]["text"])
 
             # Create TranscriptionSegment objects
@@ -423,5 +458,7 @@ IMPORTANT RULES:
                 )
                 translated_segments.append(translated_seg)
 
-        logger.info("Segment translation finished (%d batches processed)", total_batches)
+        logger.info(
+            "Segment translation finished (%d batches processed)", total_batches
+        )
         return translated_segments

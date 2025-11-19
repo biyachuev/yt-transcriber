@@ -1,6 +1,7 @@
 """
 General utility helpers used across the project.
 """
+
 import re
 from pathlib import Path
 from typing import Optional
@@ -207,11 +208,11 @@ def create_whisper_prompt_with_llm(
                 "description": metadata.get("description", "")[:500],
                 "tags": metadata.get("tags", [])[:20],
                 "channel": metadata.get("channel", ""),
-                "subtitles_sample": metadata.get("subtitles_sample", "")[:1000]
+                "subtitles_sample": metadata.get("subtitles_sample", "")[:1000],
             },
             "model": model,
             "backend": backend,
-            "method": "prompt_generation"
+            "method": "prompt_generation",
         }
         cached_result = cache.get("prompt_generation", cache_key)
         if cached_result is not None:
@@ -285,8 +286,11 @@ def create_whisper_prompt_with_llm(
                 response = client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": "Ты — ассистент для генерации промптов для Whisper. Отвечай кратко, только текст промпта."},
-                        {"role": "user", "content": llm_prompt}
+                        {
+                            "role": "system",
+                            "content": "Ты — ассистент для генерации промптов для Whisper. Отвечай кратко, только текст промпта.",
+                        },
+                        {"role": "user", "content": llm_prompt},
                     ],
                     temperature=0.3,
                     max_tokens=400,
@@ -312,15 +316,19 @@ def create_whisper_prompt_with_llm(
             )
 
             if response.status_code != 200:
-                logger.warning("%s returned status %s; falling back to standard prompt", backend, response.status_code)
+                logger.warning(
+                    "%s returned status %s; falling back to standard prompt",
+                    backend,
+                    response.status_code,
+                )
                 return create_whisper_prompt(metadata)
 
             result = response.json()
             prompt = result.get("response", "").strip()
 
         # Clean up the prompt regardless of backend
-        prompt = re.sub(r'Часть \d+[:\(][^\)]*[\):]?\s*', '', prompt)
-        prompt = re.sub(r'\(Контекст\)|\(Лексика\)|\(Привязка\)', '', prompt)
+        prompt = re.sub(r"Часть \d+[:\(][^\)]*[\):]?\s*", "", prompt)
+        prompt = re.sub(r"\(Контекст\)|\(Лексика\)|\(Привязка\)", "", prompt)
 
         if ":" in prompt and prompt.index(":") < 20:
             prompt = prompt.split(":", 1)[1].strip()
@@ -352,7 +360,9 @@ def create_whisper_prompt_with_llm(
             prompt = truncated
             logger.info("Prompt trimmed to %d characters", len(prompt))
 
-        logger.info("LLM-generated Whisper prompt (%d chars) using %s", len(prompt), backend)
+        logger.info(
+            "LLM-generated Whisper prompt (%d chars) using %s", len(prompt), backend
+        )
         logger.debug("Prompt preview: %s", format_log_preview(prompt))
 
         # Cache the result for OpenAI backend

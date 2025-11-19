@@ -1,6 +1,7 @@
 """
 Module responsible for audio transcription via Whisper.
 """
+
 import atexit
 import hashlib
 import inspect
@@ -79,7 +80,9 @@ def _patch_pyannote_revision_support():
         from pyannote.audio.core.model import Model
         from pyannote.audio.core.pipeline import Pipeline as PyannotePipeline
     except ImportError:
-        logger.debug("pyannote.audio not installed; skipping revision compatibility patch.")
+        logger.debug(
+            "pyannote.audio not installed; skipping revision compatibility patch."
+        )
         return
 
     def _patch_classmethod(cls, method_name: str) -> bool:
@@ -118,7 +121,9 @@ def _patch_pyannote_revision_support():
 class TranscriptionSegment:
     """Lightweight wrapper representing a single transcription segment."""
 
-    def __init__(self, start: float, end: float, text: str, speaker: Optional[str] = None):
+    def __init__(
+        self, start: float, end: float, text: str, speaker: Optional[str] = None
+    ):
         self.start = start
         self.end = end
         self.text = text.strip()
@@ -157,7 +162,7 @@ def _compute_audio_hash(audio_path: Path, chunk_size: int = 8192) -> str:
     bytes_read = 0
     max_bytes = 1024 * 1024  # 1MB
 
-    with open(audio_path, 'rb') as f:
+    with open(audio_path, "rb") as f:
         while bytes_read < max_bytes:
             chunk = f.read(min(chunk_size, max_bytes - bytes_read))
             if not chunk:
@@ -171,7 +176,9 @@ def _compute_audio_hash(audio_path: Path, chunk_size: int = 8192) -> str:
 class Transcriber:
     """Whisper-based audio transcriber."""
 
-    def __init__(self, method: str = TranscribeOptions.WHISPER_BASE, use_cache: bool = True):
+    def __init__(
+        self, method: str = TranscribeOptions.WHISPER_BASE, use_cache: bool = True
+    ):
         self.method = method
         self.model = None
         self.device = self._get_device()
@@ -214,7 +221,9 @@ class Transcriber:
         except NotImplementedError as exc:
             message = str(exc)
             if "SparseMPS" in message or "_sparse_coo_tensor" in message:
-                logger.warning("Sparse operations are not supported on MPS. Falling back to CPU...")
+                logger.warning(
+                    "Sparse operations are not supported on MPS. Falling back to CPU..."
+                )
                 self.device = "cpu"
                 self.model = whisper.load_model(
                     model_name,
@@ -225,8 +234,12 @@ class Transcriber:
                 raise
         except RuntimeError as exc:
             message = str(exc)
-            if "MPS" in message and ("sparse" in message.lower() or "_sparse_coo_tensor" in message):
-                logger.warning("Encountered an MPS issue while loading the model. Switching to CPU...")
+            if "MPS" in message and (
+                "sparse" in message.lower() or "_sparse_coo_tensor" in message
+            ):
+                logger.warning(
+                    "Encountered an MPS issue while loading the model. Switching to CPU..."
+                )
                 self.device = "cpu"
                 self.model = whisper.load_model(
                     model_name,
@@ -261,9 +274,14 @@ class Transcriber:
 
         if initial_prompt:
             logger.info("Using initial prompt (length: %d chars)", len(initial_prompt))
-            logger.debug("Prompt preview (first 80 chars): %s", format_log_preview(initial_prompt))
+            logger.debug(
+                "Prompt preview (first 80 chars): %s",
+                format_log_preview(initial_prompt),
+            )
         else:
-            logger.warning("No initial prompt provided. Consider using --whisper-prompt for better accuracy.")
+            logger.warning(
+                "No initial prompt provided. Consider using --whisper-prompt for better accuracy."
+            )
 
         # Check cache first
         if self.use_cache:
@@ -273,7 +291,7 @@ class Transcriber:
                 "method": self.method,
                 "language": language,
                 "with_speakers": with_speakers,
-                "initial_prompt": initial_prompt or ""
+                "initial_prompt": initial_prompt or "",
             }
             cached_result = self.cache.get("transcription", cache_key)
             if cached_result is not None:
@@ -284,7 +302,7 @@ class Transcriber:
                         start=seg["start"],
                         end=seg["end"],
                         text=seg["text"],
-                        speaker=seg.get("speaker")
+                        speaker=seg.get("speaker"),
                     )
                     for seg in cached_result
                 ]
@@ -292,7 +310,9 @@ class Transcriber:
 
         # Use OpenAI API if specified
         if self.method == TranscribeOptions.WHISPER_OPENAI_API:
-            segments = self._transcribe_with_openai_api(audio_path, language, initial_prompt)
+            segments = self._transcribe_with_openai_api(
+                audio_path, language, initial_prompt
+            )
 
             # Apply speaker diarization if requested
             if with_speakers:
@@ -357,7 +377,9 @@ class Transcriber:
 
         result, segments = _run_transcription(transcribe_options)
 
-        if initial_prompt and self._transcription_dominated_by_prompt(initial_prompt, segments):
+        if initial_prompt and self._transcription_dominated_by_prompt(
+            initial_prompt, segments
+        ):
             logger.warning(
                 "Initial prompt appears to dominate the transcription output; retrying without the prompt."
             )
@@ -370,7 +392,9 @@ class Transcriber:
 
         # Clean up hallucinations
         logger.info("Cleaning up potential hallucinations...")
-        segments = self._clean_hallucinations(segments, expected_language=detected_language)
+        segments = self._clean_hallucinations(
+            segments, expected_language=detected_language
+        )
         logger.info("After cleanup: %d segments remain", len(segments))
 
         # Apply speaker diarization if requested
@@ -391,7 +415,7 @@ class Transcriber:
         Returns:
             pyannote VAD pipeline or None if not available.
         """
-        if hasattr(self, '_vad_pipeline'):
+        if hasattr(self, "_vad_pipeline"):
             logger.debug("Returning cached VAD pipeline")
             return self._vad_pipeline
 
@@ -399,6 +423,7 @@ class Transcriber:
         try:
             logger.debug("Attempting to import pyannote.audio...")
             from pyannote.audio import Pipeline
+
             logger.debug("Successfully imported Pipeline from pyannote.audio")
             import os
 
@@ -433,11 +458,13 @@ class Transcriber:
             elif "use_auth_token" in load_kwargs:
                 token_param = "use_auth_token"
             if token_param:
-                logger.debug("Passing HuggingFace token via '%s' parameter.", token_param)
+                logger.debug(
+                    "Passing HuggingFace token via '%s' parameter.", token_param
+                )
 
             logger.info(
                 "Loading pyannote VAD pipeline (revision: %s)...",
-                load_kwargs.get("revision", "default")
+                load_kwargs.get("revision", "default"),
             )
             logger.debug(
                 "Note: Version compatibility warnings from pyannote.audio and PyTorch are expected and can be safely ignored"
@@ -447,14 +474,13 @@ class Transcriber:
                 # Note: pyannote.audio may print version warnings to stderr during model loading.
                 # These are harmless compatibility warnings from the upstream library.
                 self._vad_pipeline = Pipeline.from_pretrained(
-                    "pyannote/voice-activity-detection",
-                    **load_kwargs
+                    "pyannote/voice-activity-detection", **load_kwargs
                 )
             except TypeError as type_error:
                 error_msg = str(type_error)
                 logger.debug(
                     "Retrying VAD pipeline load due to signature mismatch: %s",
-                    type_error
+                    type_error,
                 )
 
                 fallback_kwargs = load_kwargs.copy()
@@ -478,8 +504,7 @@ class Transcriber:
                     raise
 
                 self._vad_pipeline = Pipeline.from_pretrained(
-                    "pyannote/voice-activity-detection",
-                    **fallback_kwargs
+                    "pyannote/voice-activity-detection", **fallback_kwargs
                 )
 
             logger.info("VAD pipeline loaded successfully")
@@ -498,12 +523,14 @@ class Transcriber:
                     "pyannote.audio not properly installed (%s). "
                     "Falling back to simple time-based splitting. "
                     "Install with: pip install pyannote.audio omegaconf",
-                    error_msg
+                    error_msg,
                 )
             self._vad_pipeline = None
             return None
         except Exception as e:
-            logger.warning("Failed to load VAD pipeline: %s. Using simple splitting.", e)
+            logger.warning(
+                "Failed to load VAD pipeline: %s. Using simple splitting.", e
+            )
             logger.debug("VAD pipeline error details:", exc_info=True)
             self._vad_pipeline = None
             return None
@@ -515,7 +542,7 @@ class Transcriber:
         Returns:
             pyannote diarization pipeline or None if not available.
         """
-        if hasattr(self, '_diarization_pipeline'):
+        if hasattr(self, "_diarization_pipeline"):
             return self._diarization_pipeline
 
         try:
@@ -526,7 +553,9 @@ class Transcriber:
 
             # Check if HuggingFace token is available
             hf_token = os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN")
-            diarization_revision = os.environ.get("PYANNOTE_DIARIZATION_REVISION") or "main"
+            diarization_revision = (
+                os.environ.get("PYANNOTE_DIARIZATION_REVISION") or "main"
+            )
 
             if not hf_token:
                 logger.warning(
@@ -553,12 +582,12 @@ class Transcriber:
             if token_param:
                 logger.debug(
                     "Passing HuggingFace token via '%s' parameter for diarization pipeline.",
-                    token_param
+                    token_param,
                 )
 
             logger.info(
                 "Loading pyannote speaker diarization pipeline (revision: %s)...",
-                load_kwargs.get("revision") or diarization_revision or "default"
+                load_kwargs.get("revision") or diarization_revision or "default",
             )
             logger.debug(
                 "Note: Version compatibility warnings from pyannote.audio are expected and can be safely ignored"
@@ -567,14 +596,13 @@ class Transcriber:
                 # Note: pyannote.audio may print version warnings to stderr during model loading.
                 # These are harmless compatibility warnings from the upstream library.
                 self._diarization_pipeline = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization-3.1",
-                    **load_kwargs
+                    "pyannote/speaker-diarization-3.1", **load_kwargs
                 )
             except TypeError as type_error:
                 error_msg = str(type_error)
                 logger.debug(
                     "Retrying speaker diarization pipeline load due to signature mismatch: %s",
-                    type_error
+                    type_error,
                 )
 
                 fallback_kwargs = load_kwargs.copy()
@@ -598,8 +626,7 @@ class Transcriber:
                     raise
 
                 self._diarization_pipeline = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization-3.1",
-                    **fallback_kwargs
+                    "pyannote/speaker-diarization-3.1", **fallback_kwargs
                 )
             logger.info("Speaker diarization pipeline loaded successfully")
             return self._diarization_pipeline
@@ -617,9 +644,7 @@ class Transcriber:
             return None
 
     def _preprocess_audio_for_diarization(
-        self,
-        audio_path: Path,
-        apply_noise_reduction: bool = False
+        self, audio_path: Path, apply_noise_reduction: bool = False
     ) -> tuple:
         """
         Preprocess audio for better speaker diarization quality.
@@ -649,10 +674,14 @@ class Transcriber:
         # Load audio
         try:
             import soundfile as sf
-            waveform_np, sample_rate = sf.read(str(audio_path), dtype='float32')
+
+            waveform_np, sample_rate = sf.read(str(audio_path), dtype="float32")
         except ImportError:
             import librosa
-            waveform_np, sample_rate = librosa.load(str(audio_path), sr=None, mono=False)
+
+            waveform_np, sample_rate = librosa.load(
+                str(audio_path), sr=None, mono=False
+            )
 
         # Convert to mono if stereo
         if len(waveform_np.shape) > 1:
@@ -663,6 +692,7 @@ class Transcriber:
         if sample_rate != 16000:
             logger.debug("Resampling from %d Hz to 16000 Hz...", sample_rate)
             from scipy import signal
+
             num_samples = int(len(waveform_np) * 16000 / sample_rate)
             waveform_np = signal.resample(waveform_np, num_samples)
             sample_rate = 16000
@@ -690,7 +720,7 @@ class Transcriber:
                     y=waveform_np,
                     sr=sample_rate,
                     stationary=True,
-                    prop_decrease=0.8  # Reduce noise by 80%
+                    prop_decrease=0.8,  # Reduce noise by 80%
                 )
             except ImportError:
                 logger.warning(
@@ -711,9 +741,7 @@ class Transcriber:
         return waveform, sample_rate
 
     def _perform_speaker_diarization(
-        self,
-        audio_path: Path,
-        segments: List[TranscriptionSegment]
+        self, audio_path: Path, segments: List[TranscriptionSegment]
     ) -> List[TranscriptionSegment]:
         """
         Perform speaker diarization and assign speaker labels to segments.
@@ -727,7 +755,9 @@ class Transcriber:
         """
         diarization_pipeline = self._get_diarization_pipeline()
         if not diarization_pipeline:
-            logger.warning("Speaker diarization not available. Segments will not have speaker labels.")
+            logger.warning(
+                "Speaker diarization not available. Segments will not have speaker labels."
+            )
             return segments
 
         logger.info("Performing speaker diarization...")
@@ -741,25 +771,28 @@ class Transcriber:
             try:
                 waveform, sample_rate = self._preprocess_audio_for_diarization(
                     audio_path,
-                    apply_noise_reduction=False  # TODO: Make this configurable via CLI
+                    apply_noise_reduction=False,  # TODO: Make this configurable via CLI
                 )
 
                 # Create audio dict that pyannote expects
-                audio_dict = {
-                    "waveform": waveform,
-                    "sample_rate": sample_rate
-                }
+                audio_dict = {"waveform": waveform, "sample_rate": sample_rate}
 
                 logger.debug("Running diarization with preprocessed audio...")
                 # Run diarization with preprocessed audio
                 diarization = diarization_pipeline(audio_dict)
 
             except ImportError as e:
-                logger.warning("Audio preprocessing libraries not available (%s). Using direct file loading...", e)
+                logger.warning(
+                    "Audio preprocessing libraries not available (%s). Using direct file loading...",
+                    e,
+                )
                 preprocessing_failed = True
             except Exception as e:
-                logger.warning("Failed to preprocess audio (%s: %s). Using direct file loading...",
-                             type(e).__name__, str(e))
+                logger.warning(
+                    "Failed to preprocess audio (%s: %s). Using direct file loading...",
+                    type(e).__name__,
+                    str(e),
+                )
                 preprocessing_failed = True
 
             # Fallback to direct file path if preprocessing failed
@@ -778,9 +811,9 @@ class Transcriber:
             # Use exclusive_speaker_diarization if available (4.0+), otherwise use speaker_diarization
             # exclusive_speaker_diarization ensures only one speaker is active at any time,
             # which simplifies reconciliation with transcription timestamps
-            if hasattr(diarization, 'exclusive_speaker_diarization'):
+            if hasattr(diarization, "exclusive_speaker_diarization"):
                 annotation = diarization.exclusive_speaker_diarization
-            elif hasattr(diarization, 'speaker_diarization'):
+            elif hasattr(diarization, "speaker_diarization"):
                 annotation = diarization.speaker_diarization
             else:
                 # Fallback for older versions (3.x) that return Annotation directly
@@ -826,15 +859,14 @@ class Transcriber:
 
                 # Create updated segment with speaker label
                 updated_seg = TranscriptionSegment(
-                    start=seg.start,
-                    end=seg.end,
-                    text=seg.text,
-                    speaker=best_speaker
+                    start=seg.start, end=seg.end, text=seg.text, speaker=best_speaker
                 )
                 updated_segments.append(updated_seg)
 
             # Count unique speakers
-            unique_speakers = set(seg.speaker for seg in updated_segments if seg.speaker)
+            unique_speakers = set(
+                seg.speaker for seg in updated_segments if seg.speaker
+            )
             logger.info("Identified %d unique speakers", len(unique_speakers))
 
             return updated_segments
@@ -905,13 +937,12 @@ class Transcriber:
 
         # Check for suspicious characters that could indicate command injection attempts
         # Note: subprocess.run with list args is safe, but this is defense in depth
-        suspicious_chars = [';', '&', '|', '`', '$', '\n', '\r']
+        suspicious_chars = [";", "&", "|", "`", "$", "\n", "\r"]
         path_str = str(audio_path)
         for char in suspicious_chars:
             if char in path_str:
                 logger.warning(
-                    "Suspicious character '%s' found in path: %s",
-                    char, path_str
+                    "Suspicious character '%s' found in path: %s", char, path_str
                 )
                 # Don't raise error - just log warning as Path objects are safe with subprocess
 
@@ -931,19 +962,20 @@ class Transcriber:
         Returns:
             Silero VAD model or None if not available.
         """
-        if hasattr(self, '_silero_vad_model'):
+        if hasattr(self, "_silero_vad_model"):
             return self._silero_vad_model
 
         try:
             import torch
+
             logger.debug("Attempting to load Silero VAD model...")
 
             # Load Silero VAD from torch hub (1.8MB model)
             model, utils = torch.hub.load(
-                repo_or_dir='snakers4/silero-vad',
-                model='silero_vad',
+                repo_or_dir="snakers4/silero-vad",
+                model="silero_vad",
                 force_reload=False,
-                onnx=False
+                onnx=False,
             )
 
             # Cache the model and utilities
@@ -1042,14 +1074,14 @@ class Transcriber:
             min_speech_duration_ms=250,  # Minimum speech duration
             min_silence_duration_ms=300,  # Minimum silence to split
             window_size_samples=512,  # Processing window
-            speech_pad_ms=30  # Padding around speech
+            speech_pad_ms=30,  # Padding around speech
         )
 
         # Convert to seconds
         speech_segments = []
         for ts in speech_timestamps:
-            start_sec = ts['start'] / sample_rate
-            end_sec = ts['end'] / sample_rate
+            start_sec = ts["start"] / sample_rate
+            end_sec = ts["end"] / sample_rate
             speech_segments.append((start_sec, end_sec))
 
         logger.info("Found %d speech segments with Silero VAD", len(speech_segments))
@@ -1078,14 +1110,17 @@ class Transcriber:
         result = subprocess.run(
             [
                 "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
                 str(audio_path),
             ],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         total_duration = float(result.stdout.strip())
 
@@ -1093,14 +1128,17 @@ class Transcriber:
         bitrate_result = subprocess.run(
             [
                 "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=bit_rate",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=bit_rate",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
                 str(audio_path),
             ],
             capture_output=True,
             text=True,
-            check=False  # Don't fail if bitrate is unavailable
+            check=False,  # Don't fail if bitrate is unavailable
         )
 
         # Calculate target chunk duration more accurately
@@ -1113,12 +1151,15 @@ class Transcriber:
                 # Calculate MB per second
                 mb_per_second = (bitrate_bps / 8) / (1024 * 1024)
                 # Calculate duration that fits in max_size_mb
-                target_chunk_duration = max_size_mb / mb_per_second if mb_per_second > 0 else total_duration
+                target_chunk_duration = (
+                    max_size_mb / mb_per_second if mb_per_second > 0 else total_duration
+                )
                 num_chunks = int(total_duration / target_chunk_duration) + 1
 
                 logger.debug(
                     "Using actual bitrate: %.0f kbps (%.3f MB/sec)",
-                    bitrate_bps / 1000, mb_per_second
+                    bitrate_bps / 1000,
+                    mb_per_second,
                 )
             except (ValueError, ZeroDivisionError):
                 # Fallback to file size based calculation
@@ -1133,7 +1174,10 @@ class Transcriber:
 
         logger.info(
             "Splitting %.2f MB file (%.1f sec) into ~%d chunks (target: %.1f sec each)",
-            file_size_mb, total_duration, num_chunks, target_chunk_duration
+            file_size_mb,
+            total_duration,
+            num_chunks,
+            target_chunk_duration,
         )
 
         # Try to get speech boundaries from VAD
@@ -1150,9 +1194,7 @@ class Transcriber:
 
         # Calculate split points
         split_points = self._calculate_split_points(
-            total_duration,
-            target_chunk_duration,
-            speech_segments
+            total_duration, target_chunk_duration, speech_segments
         )
 
         # Create chunks based on split points
@@ -1171,22 +1213,27 @@ class Transcriber:
                 subprocess.run(
                     [
                         "ffmpeg",
-                        "-i", str(audio_path),
-                        "-ss", str(start_time),
-                        "-t", str(duration),
-                        "-c", "copy",
+                        "-i",
+                        str(audio_path),
+                        "-ss",
+                        str(start_time),
+                        "-t",
+                        str(duration),
+                        "-c",
+                        "copy",
                         "-y",
                         str(chunk_path),
                     ],
                     capture_output=True,
                     check=True,
-                    text=True
+                    text=True,
                 )
             except subprocess.CalledProcessError as e:
                 # Stream copy failed, try re-encoding
                 logger.warning(
                     "Stream copy failed for chunk %d (error: %s). Re-encoding...",
-                    i, e.stderr[:100] if e.stderr else "unknown"
+                    i,
+                    e.stderr[:100] if e.stderr else "unknown",
                 )
 
                 # Use MP3 encoding as fallback (widely compatible)
@@ -1195,23 +1242,29 @@ class Transcriber:
                     subprocess.run(
                         [
                             "ffmpeg",
-                            "-i", str(audio_path),
-                            "-ss", str(start_time),
-                            "-t", str(duration),
-                            "-c:a", "libmp3lame",
-                            "-b:a", "192k",
+                            "-i",
+                            str(audio_path),
+                            "-ss",
+                            str(start_time),
+                            "-t",
+                            str(duration),
+                            "-c:a",
+                            "libmp3lame",
+                            "-b:a",
+                            "192k",
                             "-y",
                             str(chunk_path),
                         ],
                         capture_output=True,
                         check=True,
-                        text=True
+                        text=True,
                     )
                     logger.debug("Successfully re-encoded chunk %d to MP3", i)
                 except subprocess.CalledProcessError as e2:
                     logger.error(
                         "Failed to create chunk %d even with re-encoding: %s",
-                        i, e2.stderr[:200] if e2.stderr else "unknown error"
+                        i,
+                        e2.stderr[:200] if e2.stderr else "unknown error",
                     )
                     raise
 
@@ -1221,7 +1274,12 @@ class Transcriber:
             chunks.append((chunk_path, start_time, end_time))
             logger.debug(
                 "Created chunk %d/%d: %s (%.1f-%.1f sec, %.1f sec duration)",
-                i + 1, len(split_points), chunk_path.name, start_time, end_time, duration
+                i + 1,
+                len(split_points),
+                chunk_path.name,
+                start_time,
+                end_time,
+                duration,
             )
 
         return chunks
@@ -1230,7 +1288,7 @@ class Transcriber:
         self,
         total_duration: float,
         target_chunk_duration: float,
-        speech_segments: List[tuple]
+        speech_segments: List[tuple],
     ) -> List[tuple]:
         """
         Calculate optimal split points for audio chunks.
@@ -1266,7 +1324,9 @@ class Transcriber:
         # Precompute gaps between speech segments once (O(n) instead of O(n²))
         gaps = []
         min_gap_duration = 0.3  # Minimum gap duration to consider (300ms)
-        gap_padding = 0.1  # Padding around split points to avoid mid-syllable cuts (100ms)
+        gap_padding = (
+            0.1  # Padding around split points to avoid mid-syllable cuts (100ms)
+        )
 
         for i in range(len(speech_segments) - 1):
             gap_start = speech_segments[i][1]  # End of current segment
@@ -1279,7 +1339,11 @@ class Transcriber:
                 gap_middle = (gap_start + gap_end) / 2
                 gaps.append(gap_middle)
 
-        logger.debug("Found %d suitable gaps (>= %.1fs) for splitting", len(gaps), min_gap_duration)
+        logger.debug(
+            "Found %d suitable gaps (>= %.1fs) for splitting",
+            len(gaps),
+            min_gap_duration,
+        )
 
         if not gaps:
             # No suitable gaps found, fall back to simple splitting
@@ -1301,7 +1365,9 @@ class Transcriber:
 
         # Calculate expected number of chunks for infinite loop protection
         expected_chunks = int(total_duration / target_chunk_duration) + 1
-        max_iterations = expected_chunks * 3  # Allow 3x expected iterations as safety margin
+        max_iterations = (
+            expected_chunks * 3
+        )  # Allow 3x expected iterations as safety margin
         iteration = 0
 
         while current_start < total_duration and iteration < max_iterations:
@@ -1316,7 +1382,7 @@ class Transcriber:
             search_window_end = min(target_end + 30, total_duration)
 
             best_split = target_end  # Default to target if no good gap found
-            best_distance = float('inf')
+            best_distance = float("inf")
 
             # Skip gaps that are before our search window (sequential optimization)
             while gap_index < len(gaps) and gaps[gap_index] < search_window_start:
@@ -1344,7 +1410,7 @@ class Transcriber:
             if best_split <= current_start:
                 logger.warning(
                     "Could not find suitable split point, forcing progress at %.1f sec",
-                    target_end
+                    target_end,
                 )
                 best_split = target_end
 
@@ -1365,7 +1431,7 @@ class Transcriber:
             logger.error(
                 "Reached maximum iterations (%d) in split point calculation. "
                 "This may indicate a bug. Returning partial results.",
-                max_iterations
+                max_iterations,
             )
 
         return split_points
@@ -1412,7 +1478,7 @@ class Transcriber:
         if file_size > max_size:
             logger.warning(
                 "Audio file size (%.2f MB) exceeds OpenAI limit (25 MB). Splitting into chunks...",
-                file_size / (1024 * 1024)
+                file_size / (1024 * 1024),
             )
             chunks = self._split_audio_file(audio_path)
 
@@ -1437,10 +1503,15 @@ class Transcriber:
                     if not chunk_segments:
                         logger.debug(
                             "Chunk %d/%d (%.1f-%.1f sec) contained no speech",
-                            i + 1, len(chunks), chunk_start, chunk_end
+                            i + 1,
+                            len(chunks),
+                            chunk_start,
+                            chunk_end,
                         )
 
-                logger.info("All chunks processed. Total segments: %d", len(all_segments))
+                logger.info(
+                    "All chunks processed. Total segments: %d", len(all_segments)
+                )
                 return all_segments
 
             finally:
@@ -1455,7 +1526,9 @@ class Transcriber:
                         logger.warning("Failed to delete chunk %s: %s", chunk_path, e)
 
         # File is small enough, process directly
-        return self._transcribe_single_file_with_openai(audio_path, language, initial_prompt, client)
+        return self._transcribe_single_file_with_openai(
+            audio_path, language, initial_prompt, client
+        )
 
     def _transcribe_single_file_with_openai(
         self,
@@ -1487,7 +1560,7 @@ class Transcriber:
                 "audio_hash": audio_hash,
                 "method": "whisper_openai_api",
                 "language": language,
-                "initial_prompt": initial_prompt or ""
+                "initial_prompt": initial_prompt or "",
             }
             cached_result = self.cache.get("transcription", cache_key)
             if cached_result is not None:
@@ -1497,7 +1570,7 @@ class Transcriber:
                         start=seg["start"],
                         end=seg["end"],
                         text=seg["text"],
-                        speaker=seg.get("speaker")
+                        speaker=seg.get("speaker"),
                     )
                     for seg in cached_result
                 ]
@@ -1539,17 +1612,21 @@ class Transcriber:
             # Get audio duration for cost tracking
             try:
                 import subprocess
+
                 result = subprocess.run(
                     [
                         "ffprobe",
-                        "-v", "error",
-                        "-show_entries", "format=duration",
-                        "-of", "default=noprint_wrappers=1:nokey=1",
+                        "-v",
+                        "error",
+                        "-show_entries",
+                        "format=duration",
+                        "-of",
+                        "default=noprint_wrappers=1:nokey=1",
                         str(audio_path),
                     ],
                     capture_output=True,
                     text=True,
-                    check=True
+                    check=True,
                 )
                 duration_seconds = float(result.stdout.strip())
                 cost_tracker = get_cost_tracker()
@@ -1560,13 +1637,13 @@ class Transcriber:
             # Extract segments from response
             segments: List[TranscriptionSegment] = []
 
-            if hasattr(response, 'segments') and response.segments:
+            if hasattr(response, "segments") and response.segments:
                 for seg in tqdm(response.segments, desc="Processing segments"):
                     segments.append(
                         TranscriptionSegment(
-                            start=getattr(seg, 'start', 0.0),
-                            end=getattr(seg, 'end', 0.0),
-                            text=getattr(seg, 'text', ''),
+                            start=getattr(seg, "start", 0.0),
+                            end=getattr(seg, "end", 0.0),
+                            text=getattr(seg, "text", ""),
                         )
                     )
             else:
@@ -1576,17 +1653,21 @@ class Transcriber:
                     TranscriptionSegment(
                         start=0.0,
                         end=0.0,
-                        text=response.text if hasattr(response, 'text') else '',
+                        text=response.text if hasattr(response, "text") else "",
                     )
                 )
 
-            detected_language = response.language if hasattr(response, 'language') else 'unknown'
+            detected_language = (
+                response.language if hasattr(response, "language") else "unknown"
+            )
             logger.info("Detected language: %s", detected_language)
             logger.info("Transcription finished. Generated %d segments", len(segments))
 
             # Clean up hallucinations
             logger.info("Cleaning up potential hallucinations...")
-            segments = self._clean_hallucinations(segments, expected_language=detected_language)
+            segments = self._clean_hallucinations(
+                segments, expected_language=detected_language
+            )
             logger.info("After cleanup: %d segments remain", len(segments))
 
             # Cache the result
@@ -1598,8 +1679,8 @@ class Transcriber:
 
         finally:
             # Close the file handle
-            if 'file' in api_params and hasattr(api_params['file'], 'close'):
-                api_params['file'].close()
+            if "file" in api_params and hasattr(api_params["file"], "close"):
+                api_params["file"].close()
 
     def _transcription_dominated_by_prompt(
         self,
@@ -1648,9 +1729,7 @@ class Transcriber:
         return False
 
     def _clean_hallucinations(
-        self,
-        segments: List[TranscriptionSegment],
-        expected_language: str = "ru"
+        self, segments: List[TranscriptionSegment], expected_language: str = "ru"
     ) -> List[TranscriptionSegment]:
         """
         Clean up common Whisper hallucinations from transcription segments.
@@ -1672,13 +1751,10 @@ class Transcriber:
             # Subscription/outro phrases (English)
             r"(?i)(thanks?\s+for\s+watching|please\s+subscribe|like\s+and\s+subscribe)",
             r"(?i)(don't\s+forget\s+to|hit\s+the\s+bell|smash\s+that)",
-
             # Random names that appear in silence
             r"(?i)(shepherd\s+bettsies?|betsy|campo)",
-
             # Short nonsensical fragments
             r"^\s*[\w\-]{1,3}\s*$",  # Very short words alone
-
             # Music/sound effect markers
             r"^\s*\[.*?\]\s*$",  # Already bracketed items
             r"(?i)^\s*(music|applause|laughter)\s*$",
@@ -1688,9 +1764,9 @@ class Transcriber:
         def has_suspicious_mix(text: str) -> bool:
             """Check if text has suspicious language mixing."""
             # Count Cyrillic, Latin, and other scripts
-            cyrillic = sum(1 for c in text if '\u0400' <= c <= '\u04FF')
+            cyrillic = sum(1 for c in text if "\u0400" <= c <= "\u04ff")
             latin = sum(1 for c in text if c.isascii() and c.isalpha())
-            other = sum(1 for c in text if unicodedata.category(c).startswith('Lo'))
+            other = sum(1 for c in text if unicodedata.category(c).startswith("Lo"))
 
             total_chars = cyrillic + latin + other
             if total_chars == 0:
@@ -1711,10 +1787,21 @@ class Transcriber:
                     # No Russian characters, but has English - likely hallucination
                     # Exception: very common technical terms
                     text_lower = text.lower().strip()
-                    common_terms = ["ai", "genai", "chatgpt", "openai", "api", "rag", "ml", "gpt"]
+                    common_terms = [
+                        "ai",
+                        "genai",
+                        "chatgpt",
+                        "openai",
+                        "api",
+                        "rag",
+                        "ml",
+                        "gpt",
+                    ]
                     # If it's ONLY common terms, keep it
-                    words = re.findall(r'\b\w+\b', text_lower)
-                    if words and all(word in common_terms or len(word) <= 2 for word in words):
+                    words = re.findall(r"\b\w+\b", text_lower)
+                    if words and all(
+                        word in common_terms or len(word) <= 2 for word in words
+                    ):
                         return False
                     return True
 
@@ -1738,7 +1825,11 @@ class Transcriber:
                 return True
 
             # Check for segments with too many special/unknown characters
-            special_chars = sum(1 for c in text_stripped if not (c.isalnum() or c.isspace() or c in ".,!?;:-—"))
+            special_chars = sum(
+                1
+                for c in text_stripped
+                if not (c.isalnum() or c.isspace() or c in ".,!?;:-—")
+            )
             if len(text_stripped) > 0 and special_chars / len(text_stripped) > 0.3:
                 return True
 
@@ -1751,15 +1842,21 @@ class Transcriber:
             for char in text:
                 cat = unicodedata.category(char)
                 # Keep Latin, Cyrillic, common punctuation, spaces
-                if (cat.startswith('L') or cat.startswith('P') or
-                    cat.startswith('Z') or cat.startswith('N') or
-                    char in ".,!?;:—–-\"'()[]"):
+                if (
+                    cat.startswith("L")
+                    or cat.startswith("P")
+                    or cat.startswith("Z")
+                    or cat.startswith("N")
+                    or char in ".,!?;:—–-\"'()[]"
+                ):
                     # But filter out scripts we don't expect
                     if expected_language == "ru":
                         # Allow Cyrillic, Latin (for terms), common chars
-                        if ('\u0400' <= char <= '\u04FF' or  # Cyrillic
-                            char.isascii() or  # ASCII (Latin + punct)
-                            char.isspace()):
+                        if (
+                            "\u0400" <= char <= "\u04ff"  # Cyrillic
+                            or char.isascii()  # ASCII (Latin + punct)
+                            or char.isspace()
+                        ):
                             cleaned += char
                     elif expected_language == "en":
                         if char.isascii() or char.isspace():
@@ -1768,7 +1865,7 @@ class Transcriber:
                         cleaned += char
 
             # Remove multiple spaces
-            cleaned = re.sub(r'\s+', ' ', cleaned)
+            cleaned = re.sub(r"\s+", " ", cleaned)
 
             return cleaned.strip()
 
@@ -1783,7 +1880,9 @@ class Transcriber:
                 hallucination_count += 1
                 logger.debug(
                     "Removed hallucination at %.1f-%.1fs: %s",
-                    seg.start, seg.end, seg.text[:50]
+                    seg.start,
+                    seg.end,
+                    seg.text[:50],
                 )
                 continue
 
@@ -1797,7 +1896,7 @@ class Transcriber:
                         start=seg.start,
                         end=seg.end,
                         text=cleaned_text,
-                        speaker=seg.speaker
+                        speaker=seg.speaker,
                     )
                 )
 
@@ -1805,7 +1904,7 @@ class Transcriber:
             logger.info(
                 "Cleaned %d hallucination segments (%.1f%% of total)",
                 hallucination_count,
-                100 * hallucination_count / len(segments) if segments else 0
+                100 * hallucination_count / len(segments) if segments else 0,
             )
 
         return cleaned_segments
@@ -1932,7 +2031,9 @@ class Transcriber:
                     start=start_time,
                     end=end_time,
                     text=paragraph,
-                    speaker=_select_speaker_for_interval(segments, start_time, end_time),
+                    speaker=_select_speaker_for_interval(
+                        segments, start_time, end_time
+                    ),
                 )
             )
             start_time = end_time

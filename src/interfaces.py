@@ -4,6 +4,7 @@ Protocol interfaces for external services.
 This module defines abstract interfaces for external dependencies,
 enabling dependency injection and easier testing.
 """
+
 from typing import Protocol, List, Dict, Any, Optional
 from pathlib import Path
 
@@ -15,7 +16,7 @@ class TranscriptionServiceProtocol(Protocol):
         self,
         audio_path: Path | str,
         language: Optional[str] = None,
-        initial_prompt: Optional[str] = None
+        initial_prompt: Optional[str] = None,
     ) -> List[Any]:
         """
         Transcribe audio file to text segments.
@@ -35,10 +36,7 @@ class TranslationServiceProtocol(Protocol):
     """Protocol for translation services (NLLB, OpenAI, etc.)"""
 
     def translate_segments(
-        self,
-        segments: List[Any],
-        source_lang: str,
-        target_lang: str
+        self, segments: List[Any], source_lang: str, target_lang: str
     ) -> List[Any]:
         """
         Translate transcription segments.
@@ -53,12 +51,7 @@ class TranslationServiceProtocol(Protocol):
         """
         ...
 
-    def translate_text(
-        self,
-        text: str,
-        source_lang: str,
-        target_lang: str
-    ) -> str:
+    def translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
         """
         Translate plain text.
 
@@ -81,7 +74,7 @@ class LLMServiceProtocol(Protocol):
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
     ) -> str:
         """
         Generate text completion from prompt.
@@ -121,15 +114,21 @@ class CostTrackerProtocol(Protocol):
         """Track transcription cost"""
         ...
 
-    def add_translation(self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None) -> None:
+    def add_translation(
+        self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None
+    ) -> None:
         """Track translation cost"""
         ...
 
-    def add_refinement(self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None) -> None:
+    def add_refinement(
+        self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None
+    ) -> None:
         """Track refinement cost"""
         ...
 
-    def add_summarization(self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None) -> None:
+    def add_summarization(
+        self, prompt_tokens: int, completion_tokens: int, model: Optional[str] = None
+    ) -> None:
         """Track summarization cost"""
         ...
 

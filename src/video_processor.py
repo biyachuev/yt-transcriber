@@ -1,6 +1,7 @@
 """
 Video processor utility for extracting audio from video files.
 """
+
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -43,18 +44,23 @@ class VideoProcessor:
 
         # Check if audio file already exists (avoid re-extraction).
         if audio_output.exists():
-            logger.info("Audio file already exists, skipping extraction: %s", audio_output)
+            logger.info(
+                "Audio file already exists, skipping extraction: %s", audio_output
+            )
             return audio_output
 
         # Build FFmpeg command.
         ffmpeg_cmd = [
             "ffmpeg",
-            "-i", str(video_path),
+            "-i",
+            str(video_path),
             "-vn",  # No video
-            "-acodec", "libmp3lame",
-            "-q:a", "2",  # High quality
+            "-acodec",
+            "libmp3lame",
+            "-q:a",
+            "2",  # High quality
             "-y",  # Overwrite output file if exists
-            str(audio_output)
+            str(audio_output),
         ]
 
         logger.info("Running FFmpeg to extract audio...")
@@ -66,7 +72,7 @@ class VideoProcessor:
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
             )
 
             logger.debug("FFmpeg output: %s", result.stderr)
@@ -85,7 +91,9 @@ class VideoProcessor:
             )
 
         if not audio_output.exists():
-            raise RuntimeError(f"Audio extraction failed: output file not created at {audio_output}")
+            raise RuntimeError(
+                f"Audio extraction failed: output file not created at {audio_output}"
+            )
 
         logger.info("Audio extracted successfully: %s", audio_output)
 
@@ -103,10 +111,13 @@ class VideoProcessor:
         """
         ffprobe_cmd = [
             "ffprobe",
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            str(video_path)
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(video_path),
         ]
 
         try:
@@ -115,7 +126,7 @@ class VideoProcessor:
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
             )
 
             duration_str = result.stdout.strip()

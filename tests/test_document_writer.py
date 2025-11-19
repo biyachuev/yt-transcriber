@@ -1,4 +1,5 @@
 """Tests for document_writer module"""
+
 import pytest
 from pathlib import Path
 import tempfile
@@ -20,7 +21,8 @@ def temp_output_dir():
 def writer(temp_output_dir, monkeypatch):
     """Create DocumentWriter with temp directory"""
     from src import config
-    monkeypatch.setattr(config.settings, 'OUTPUT_DIR', temp_output_dir)
+
+    monkeypatch.setattr(config.settings, "OUTPUT_DIR", temp_output_dir)
     return DocumentWriter()
 
 
@@ -34,17 +36,21 @@ class TestDocumentWriter:
     def test_create_documents_basic(self, writer, temp_output_dir):
         """Test creating basic documents"""
         title = "Test Document"
-        sections = [{'title': 'Section 1', 'method': 'Test Method', 'content': 'Test content'}]
+        sections = [
+            {"title": "Section 1", "method": "Test Method", "content": "Test content"}
+        ]
 
         docx_path, md_path = writer.create_documents(title, sections)
 
         assert docx_path.exists()
         assert md_path.exists()
-        assert docx_path.suffix == '.docx'
-        assert md_path.suffix == '.md'
+        assert docx_path.suffix == ".docx"
+        assert md_path.suffix == ".md"
 
-    @patch('src.transcriber.Transcriber')
-    def test_create_from_segments(self, mock_transcriber_class, writer, temp_output_dir):
+    @patch("src.transcriber.Transcriber")
+    def test_create_from_segments(
+        self, mock_transcriber_class, writer, temp_output_dir
+    ):
         """Test creating documents from segments"""
         # Mock Transcriber to avoid heavy imports
         mock_transcriber = MagicMock()
@@ -54,14 +60,14 @@ class TestDocumentWriter:
         title = "Segments Test"
         segments = [
             TranscriptionSegment(0, 5, "First segment"),
-            TranscriptionSegment(5, 10, "Second segment")
+            TranscriptionSegment(5, 10, "Second segment"),
         ]
 
         docx_path, md_path = writer.create_from_segments(
             title=title,
             transcription_segments=segments,
             transcribe_method="whisper_base",
-            with_timestamps=False
+            with_timestamps=False,
         )
 
         assert docx_path.exists()

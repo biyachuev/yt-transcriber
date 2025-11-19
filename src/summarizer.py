@@ -1,6 +1,7 @@
 """
 Text summarization module supporting Ollama and OpenAI backends.
 """
+
 from typing import Optional
 import requests
 from tqdm import tqdm
@@ -21,7 +22,7 @@ class Summarizer:
         backend: str = SummarizeOptions.OLLAMA,
         model_name: str = "qwen2.5:3b",
         ollama_url: str = "http://localhost:11434",
-        use_cache: bool = True
+        use_cache: bool = True,
     ):
         """
         Initialize the summarizer.
@@ -38,7 +39,11 @@ class Summarizer:
         self.api_endpoint = f"{ollama_url}/api/generate"
         self.use_cache = use_cache
         self.cache = get_cache() if use_cache else None
-        self.rate_limiter = get_openai_rate_limiter() if backend == SummarizeOptions.OPENAI_API else None
+        self.rate_limiter = (
+            get_openai_rate_limiter()
+            if backend == SummarizeOptions.OPENAI_API
+            else None
+        )
 
         # Check backend availability
         if self.backend == SummarizeOptions.OLLAMA:
@@ -58,12 +63,14 @@ class Summarizer:
             if response.status_code == 200:
                 logger.info(f"Ollama server available at {self.ollama_url}")
 
-                models = response.json().get('models', [])
-                model_names = [m['name'] for m in models]
+                models = response.json().get("models", [])
+                model_names = [m["name"] for m in models]
 
                 if self.model_name not in model_names:
                     error_msg = f"\n{'='*60}\n"
-                    error_msg += f"❌ ERROR: Model '{self.model_name}' not found in Ollama\n"
+                    error_msg += (
+                        f"❌ ERROR: Model '{self.model_name}' not found in Ollama\n"
+                    )
                     error_msg += f"{'='*60}\n\n"
 
                     if model_names:
@@ -122,6 +129,7 @@ class Summarizer:
 
         try:
             from openai import OpenAI
+
             client = OpenAI(api_key=api_key)
             logger.info("OpenAI API available")
         except ImportError:
@@ -150,19 +158,19 @@ class Summarizer:
                 "temperature": 0.3,
                 "top_p": 0.9,
                 "num_predict": 4000,
-            }
+            },
         }
 
         try:
             response = requests.post(
                 self.api_endpoint,
                 json=payload,
-                timeout=600  # 10 minute timeout for summarization
+                timeout=600,  # 10 minute timeout for summarization
             )
             response.raise_for_status()
 
             result = response.json()
-            return result.get('response', '').strip()
+            return result.get("response", "").strip()
         except Exception as e:
             logger.error(f"Error calling Ollama: {e}")
             raise
@@ -185,7 +193,7 @@ class Summarizer:
                 "prompt": prompt,
                 "system_prompt": system_prompt,
                 "model": self.model_name,
-                "method": "openai_summarize"
+                "method": "openai_summarize",
             }
             cached_result = self.cache.get("summarization", cache_key)
             if cached_result is not None:
@@ -221,7 +229,7 @@ class Summarizer:
                 cost_tracker.add_summarization(
                     response.usage.prompt_tokens,
                     response.usage.completion_tokens,
-                    model=self.model_name
+                    model=self.model_name,
                 )
 
             # Cache the result
@@ -235,10 +243,7 @@ class Summarizer:
             raise
 
     def summarize(
-        self,
-        text: str,
-        language: str = "ru",
-        custom_prompt: Optional[str] = None
+        self, text: str, language: str = "ru", custom_prompt: Optional[str] = None
     ) -> str:
         """
         Summarize text.
@@ -302,7 +307,7 @@ REQUIREMENTS:
         text: str,
         language: str = "ru",
         custom_prompt: Optional[str] = None,
-        max_chunk_tokens: int = 8000
+        max_chunk_tokens: int = 8000,
     ) -> str:
         """
         Summarize long text by splitting it into chunks and summarizing each chunk.
@@ -323,7 +328,10 @@ REQUIREMENTS:
         if self.backend == SummarizeOptions.OPENAI_API:
             # GPT-4 (8k context): ~4000 input tokens + 4000 output = safe limit ~3000 words
             # GPT-4-turbo/GPT-4o (128k): can handle larger chunks
-            if "gpt-4-turbo" in self.model_name.lower() or "gpt-4o" in self.model_name.lower():
+            if (
+                "gpt-4-turbo" in self.model_name.lower()
+                or "gpt-4o" in self.model_name.lower()
+            ):
                 # Large context models - can use larger chunks
                 safe_chunk_size = min(max_chunk_tokens, 20000)
             elif "gpt-3.5" in self.model_name.lower():
@@ -337,7 +345,8 @@ REQUIREMENTS:
                     logger.warning(
                         "Reducing chunk size from %d to %d words for GPT-4 8k context window. "
                         "Consider using gpt-4-turbo or gpt-4o for larger chunks.",
-                        max_chunk_tokens, safe_chunk_size
+                        max_chunk_tokens,
+                        safe_chunk_size,
                     )
         else:
             # Ollama - use configured chunk size
@@ -345,13 +354,17 @@ REQUIREMENTS:
 
         # Split into chunks
         chunks = chunk_text(text, max_tokens=safe_chunk_size)
-        logger.info(f"Split text into {len(chunks)} chunks (max {safe_chunk_size} words per chunk)")
+        logger.info(
+            f"Split text into {len(chunks)} chunks (max {safe_chunk_size} words per chunk)"
+        )
 
         # Summarize each chunk
         chunk_summaries = []
         for i, chunk in enumerate(tqdm(chunks, desc="Summarizing chunks"), 1):
             logger.info(f"Summarizing chunk {i}/{len(chunks)}")
-            summary = self.summarize(chunk, language=language, custom_prompt=custom_prompt)
+            summary = self.summarize(
+                chunk, language=language, custom_prompt=custom_prompt
+            )
             chunk_summaries.append(summary)
 
         # If we have multiple summaries, combine them

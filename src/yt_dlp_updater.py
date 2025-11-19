@@ -23,11 +23,11 @@ def get_current_version() -> str:
             [sys.executable, "-m", "pip", "show", "yt-dlp"],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
-        for line in result.stdout.split('\n'):
-            if line.startswith('Version:'):
-                return line.split(':', 1)[1].strip()
+        for line in result.stdout.split("\n"):
+            if line.startswith("Version:"):
+                return line.split(":", 1)[1].strip()
         return None
     except subprocess.CalledProcessError:
         return None
@@ -46,22 +46,22 @@ def get_latest_version() -> str:
             capture_output=True,
             text=True,
             check=True,
-            timeout=10
+            timeout=10,
         )
         # Parse output to find latest version
         # Format: "yt-dlp (2025.10.22)"
-        for line in result.stdout.split('\n'):
-            if 'Available versions:' in line or 'LATEST:' in line:
+        for line in result.stdout.split("\n"):
+            if "Available versions:" in line or "LATEST:" in line:
                 # Extract version from line
                 parts = line.split()
                 for part in parts:
                     if part[0].isdigit():
-                        return part.rstrip(',')
+                        return part.rstrip(",")
 
         # Alternative approach: check first line which usually contains latest
-        first_line = result.stdout.split('\n')[0]
-        if '(' in first_line and ')' in first_line:
-            ver = first_line.split('(')[1].split(')')[0].strip()
+        first_line = result.stdout.split("\n")[0]
+        if "(" in first_line and ")" in first_line:
+            ver = first_line.split("(")[1].split(")")[0].strip()
             if ver[0].isdigit():
                 return ver
 
@@ -84,7 +84,7 @@ def update_yt_dlp() -> bool:
             capture_output=True,
             text=True,
             check=True,
-            timeout=60
+            timeout=60,
         )
         logger.info("yt-dlp updated successfully")
         return True
@@ -119,7 +119,9 @@ def check_and_update_yt_dlp(force_update: bool = False) -> bool:
     latest = get_latest_version()
 
     if not latest:
-        logger.warning("Could not check for latest yt-dlp version, skipping update check")
+        logger.warning(
+            "Could not check for latest yt-dlp version, skipping update check"
+        )
         logger.info("Continuing with current version...")
         return True  # Don't block execution if we can't check
 

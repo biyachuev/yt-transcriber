@@ -1,4 +1,5 @@
 """Tests for VAD optimizations."""
+
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -13,9 +14,7 @@ class TestVADOptimizations:
         transcriber = Transcriber()
 
         split_points = transcriber._calculate_split_points(
-            total_duration=100.0,
-            target_chunk_duration=30.0,
-            speech_segments=[]
+            total_duration=100.0, target_chunk_duration=30.0, speech_segments=[]
         )
 
         # Should create ~4 chunks (100/30 = 3.33, rounded up)
@@ -29,16 +28,16 @@ class TestVADOptimizations:
 
         # Create speech segments with clear gaps
         speech_segments = [
-            (0.0, 28.0),   # First speech
+            (0.0, 28.0),  # First speech
             (30.0, 58.0),  # Gap at 28-30 (2s gap)
             (60.0, 88.0),  # Gap at 58-60 (2s gap)
-            (90.0, 100.0)  # Gap at 88-90 (2s gap)
+            (90.0, 100.0),  # Gap at 88-90 (2s gap)
         ]
 
         split_points = transcriber._calculate_split_points(
             total_duration=100.0,
             target_chunk_duration=30.0,
-            speech_segments=speech_segments
+            speech_segments=speech_segments,
         )
 
         # Should split at gaps
@@ -57,16 +56,16 @@ class TestVADOptimizations:
         # Create speech segments with short gaps that should be ignored
         speech_segments = [
             (0.0, 10.0),
-            (10.1, 20.0),   # 100ms gap - too short
-            (20.2, 30.0),   # 200ms gap - too short
-            (30.5, 40.0),   # 300ms gap - should be used
-            (40.8, 50.0),   # 300ms gap - should be used
+            (10.1, 20.0),  # 100ms gap - too short
+            (20.2, 30.0),  # 200ms gap - too short
+            (30.5, 40.0),  # 300ms gap - should be used
+            (40.8, 50.0),  # 300ms gap - should be used
         ]
 
         split_points = transcriber._calculate_split_points(
             total_duration=50.0,
             target_chunk_duration=25.0,
-            speech_segments=speech_segments
+            speech_segments=speech_segments,
         )
 
         # Should create chunks, but not at very short gaps
@@ -88,12 +87,13 @@ class TestVADOptimizations:
 
         # This should complete quickly (O(n) vs O(n²))
         import time
+
         start_time = time.time()
 
         split_points = transcriber._calculate_split_points(
             total_duration=2000.0,
             target_chunk_duration=200.0,
-            speech_segments=speech_segments
+            speech_segments=speech_segments,
         )
 
         elapsed = time.time() - start_time
@@ -113,7 +113,7 @@ class TestVADOptimizations:
         split_points = transcriber._calculate_split_points(
             total_duration=100.0,
             target_chunk_duration=30.0,
-            speech_segments=speech_segments
+            speech_segments=speech_segments,
         )
 
         # Should still create chunks even without good gaps
@@ -129,13 +129,13 @@ class TestVADOptimizations:
         model = transcriber._get_silero_vad()
 
         # Either it loads successfully or returns None
-        assert model is None or hasattr(transcriber, '_silero_vad_model')
+        assert model is None or hasattr(transcriber, "_silero_vad_model")
 
         # Second call should use cached model
         model2 = transcriber._get_silero_vad()
         assert model2 is model
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_bitrate_detection(self, mock_run):
         """Test ffprobe bitrate detection for accurate chunk sizing."""
         transcriber = Transcriber()
@@ -143,26 +143,34 @@ class TestVADOptimizations:
         # Mock ffprobe responses
         mock_run.side_effect = [
             # Duration query
-            Mock(returncode=0, stdout='1000.0\n'),
+            Mock(returncode=0, stdout="1000.0\n"),
             # Bitrate query
-            Mock(returncode=0, stdout='192000\n'),  # 192 kbps
+            Mock(returncode=0, stdout="192000\n"),  # 192 kbps
         ]
 
         # Create a temporary test file
         import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             test_path = Path(f.name)
-            f.write(b'fake audio data')
+            f.write(b"fake audio data")
 
         try:
             # Mock the validation to skip file checks
-            with patch.object(transcriber, '_validate_audio_path'):
-                with patch.object(transcriber, '_find_speech_boundaries', return_value=[]):
-                    with patch.object(transcriber, '_calculate_split_points', return_value=[(0, 500)]):
-                        with patch('subprocess.run', side_effect=[
-                            Mock(returncode=0, stdout='1000.0\n'),  # duration
-                            Mock(returncode=0, stdout='192000\n'),   # bitrate
-                        ]):
+            with patch.object(transcriber, "_validate_audio_path"):
+                with patch.object(
+                    transcriber, "_find_speech_boundaries", return_value=[]
+                ):
+                    with patch.object(
+                        transcriber, "_calculate_split_points", return_value=[(0, 500)]
+                    ):
+                        with patch(
+                            "subprocess.run",
+                            side_effect=[
+                                Mock(returncode=0, stdout="1000.0\n"),  # duration
+                                Mock(returncode=0, stdout="192000\n"),  # bitrate
+                            ],
+                        ):
                             # This should use bitrate for calculation
                             # Just test that it doesn't crash
                             try:
@@ -186,7 +194,7 @@ class TestVADOptimizations:
         split_points = transcriber._calculate_split_points(
             total_duration=60.0,
             target_chunk_duration=30.0,
-            speech_segments=speech_segments
+            speech_segments=speech_segments,
         )
 
         # Should split near the gap
@@ -205,11 +213,15 @@ class TestVADFallback:
         transcriber = Transcriber()
 
         # Mock Silero to fail
-        with patch.object(transcriber, '_get_silero_vad', return_value=Mock()):
-            with patch.object(transcriber, '_find_speech_boundaries_silero', side_effect=Exception("Silero error")):
-                with patch.object(transcriber, '_get_vad_pipeline', return_value=None):
+        with patch.object(transcriber, "_get_silero_vad", return_value=Mock()):
+            with patch.object(
+                transcriber,
+                "_find_speech_boundaries_silero",
+                side_effect=Exception("Silero error"),
+            ):
+                with patch.object(transcriber, "_get_vad_pipeline", return_value=None):
                     # Should return empty list when both fail
-                    result = transcriber._find_speech_boundaries(Path('/fake/path.mp3'))
+                    result = transcriber._find_speech_boundaries(Path("/fake/path.mp3"))
                     assert result == []
 
     def test_find_speech_boundaries_no_vad_available(self):
@@ -217,7 +229,7 @@ class TestVADFallback:
         transcriber = Transcriber()
 
         # Mock both VAD methods to return None
-        with patch.object(transcriber, '_get_silero_vad', return_value=None):
-            with patch.object(transcriber, '_get_vad_pipeline', return_value=None):
-                result = transcriber._find_speech_boundaries(Path('/fake/path.mp3'))
+        with patch.object(transcriber, "_get_silero_vad", return_value=None):
+            with patch.object(transcriber, "_get_vad_pipeline", return_value=None):
+                result = transcriber._find_speech_boundaries(Path("/fake/path.mp3"))
                 assert result == []
