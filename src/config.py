@@ -83,8 +83,17 @@ class TranscribeOptions:
     WHISPER_SMALL = "whisper_small"
     WHISPER_MEDIUM = "whisper_medium"
     WHISPER_OPENAI_API = "whisper_openai_api"
+    GIGAAM_E2E_RNNT = "gigaam_e2e_rnnt"
+    GIGAAM_E2E_CTC = "gigaam_e2e_ctc"
 
-    ALL = [WHISPER_BASE, WHISPER_SMALL, WHISPER_MEDIUM, WHISPER_OPENAI_API]
+    ALL = [
+        WHISPER_BASE,
+        WHISPER_SMALL,
+        WHISPER_MEDIUM,
+        WHISPER_OPENAI_API,
+        GIGAAM_E2E_RNNT,
+        GIGAAM_E2E_CTC,
+    ]
 
 
 class TranslateOptions:

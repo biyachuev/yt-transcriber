@@ -2,25 +2,18 @@
 
 All significant changes to this project are documented here.
 
-## [Unreleased]
+## [1.7.0] - 2025-11-23
 
 ### Added
-- ✨ **Early API Key Validation**
-  - New `api_validator.py` module for early API key validation
-  - Validates OpenAI API keys at startup with test API call
-  - Fails fast before expensive operations (downloads, processing)
-  - Clear error messages with authentication failure details
-  - Validates keys once even when multiple operations need them
-  - Saves time and bandwidth by catching errors early
-  - Comprehensive test coverage with 12 unit tests
+- ✨ **GigaAM v3 backend (RU)**
+  - Support for `gigaam-e2e-rnnt` / `gigaam-e2e-ctc` via Hugging Face (`transformers`, torch ≥ 2.6)
+  - Caching, VAD-driven chunking, and <25s guardrail for long-form
+  - New unit tests for loading and chunker (`tests/test_gigaam_backend.py`)
 
-- ✨ **Automatic yt-dlp version checking and updates**
-  - New `yt_dlp_updater.py` module for automatic version management
-  - Checks for yt-dlp updates before processing YouTube videos
-  - Auto-updates to latest version if outdated
-  - Prevents HTTP 403 Forbidden errors from YouTube API changes
-  - Graceful handling of version check failures (non-blocking)
-  - Added `packaging>=23.0` dependency for version comparison
+### Changed
+- ⬆️ Require torch ≥ 2.6 for loading GigaAM via `transformers`
+
+## [1.6.0] - 2025-10-21
 
 ## [1.6.0] - 2025-10-21
 

@@ -119,6 +119,7 @@ Run 'python -m src.main <command> --help' for command-specific options.
 Examples:
     # Transcribe and translate a YouTube video
     python -m src.main youtube --url "https://youtube.com/watch?v=..." --transcribe whisper-base --translate nllb
+    python -m src.main youtube --url "https://youtube.com/watch?v=..." --transcribe gigaam-e2e-rnnt --translate nllb
 
     # Process a local audio file with refinement
     python -m src.main audio --input audio.mp3 --transcribe whisper-medium --refine-model qwen2.5:3b
@@ -137,7 +138,7 @@ Global Options:
     --help, -h      Show this message
 
 Common Options (available for all commands):
-    --transcribe METHOD         Transcription method (whisper-base, whisper-small, whisper-medium, whisper-openai-api)
+    --transcribe METHOD         Transcription method (whisper-base, whisper-small, whisper-medium, whisper-openai-api, gigaam-e2e-rnnt, gigaam-e2e-ctc)
     --translate METHOD          Translation method (nllb, openai-api)
     --prompt-file PATH          Custom Whisper prompt file
     --refine-model MODEL        Model for transcript refinement (e.g. qwen2.5:3b, gpt-4)
@@ -695,11 +696,13 @@ def validate_args(command: str, args) -> bool:
             "whisper_small",
             "whisper_medium",
             "whisper_openai_api",
+            "gigaam_e2e_rnnt",
+            "gigaam_e2e_ctc",
         ]
         if method not in valid_transcribe_methods:
             logger.error("Unknown transcription method: %s", args.transcribe)
             logger.error(
-                "Available methods: whisper-base, whisper-small, whisper-medium, whisper-openai-api"
+                "Available methods: whisper-base, whisper-small, whisper-medium, whisper-openai-api, gigaam-e2e-rnnt, gigaam-e2e-ctc"
             )
             return False
 
@@ -1835,7 +1838,7 @@ def main():
         subparser.add_argument(
             "--transcribe",
             type=str,
-            help="Transcription method (whisper-base, whisper-small, whisper-medium, whisper-openai-api)",
+            help="Transcription method (whisper-base, whisper-small, whisper-medium, whisper-openai-api, gigaam-e2e-rnnt, gigaam-e2e-ctc)",
         )
         subparser.add_argument(
             "--translate", type=str, help="Translation method (nllb, openai-api)"

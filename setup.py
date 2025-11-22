@@ -13,7 +13,7 @@ requirements = (this_directory / "requirements.txt").read_text().splitlines()
 
 setup(
     name="yt-transcriber",
-    version="1.0.0",
+    version="1.7.0",
     author="Your Name",
     author_email="your.email@example.com",
     description="Universal toolkit for transcribing and translating videos",

@@ -1,5 +1,5 @@
 """
-Module responsible for audio transcription via Whisper.
+Module responsible for audio transcription via Whisper or GigaAM.
 """
 
 import atexit
@@ -9,7 +9,7 @@ import re
 import warnings
 from functools import wraps
 from pathlib import Path
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Tuple
 
 import torch
 import whisper
@@ -174,7 +174,7 @@ def _compute_audio_hash(audio_path: Path, chunk_size: int = 8192) -> str:
 
 
 class Transcriber:
-    """Whisper-based audio transcriber."""
+    """ASR transcriber supporting Whisper and GigaAM."""
 
     def __init__(
         self, method: str = TranscribeOptions.WHISPER_BASE, use_cache: bool = True
@@ -188,6 +188,13 @@ class Transcriber:
         if use_cache:
             logger.info("Transcription caching enabled")
 
+    def _is_gigaam_method(self) -> bool:
+        """Return True if selected backend is a GigaAM model."""
+        return self.method in (
+            TranscribeOptions.GIGAAM_E2E_RNNT,
+            TranscribeOptions.GIGAAM_E2E_CTC,
+        )
+
     def _get_device(self) -> str:
         """Detect the best available device for inference."""
         if torch.cuda.is_available():
@@ -197,8 +204,12 @@ class Transcriber:
         return "cpu"
 
     def _load_model(self):
-        """Load the selected Whisper model if it has not been loaded yet."""
+        """Load the selected ASR model if it has not been loaded yet."""
         if self.model is not None:
+            return
+
+        if self._is_gigaam_method():
+            self._load_gigaam_model()
             return
 
         logger.info("Loading Whisper model (%s)...", self.method)
@@ -251,6 +262,46 @@ class Transcriber:
 
         logger.info("Model loaded successfully")
 
+    def _load_gigaam_model(self):
+        """Load a GigaAM ASR model."""
+        try:
+            from transformers import AutoModel
+        except ImportError as exc:  # pragma: no cover - transformers is already a dependency
+            raise ValueError(
+                "GigaAM backend requires transformers>=4.57.1. "
+                "Install transformers or update your environment."
+            ) from exc
+
+        revision = None
+        if self.method == TranscribeOptions.GIGAAM_E2E_RNNT:
+            revision = "e2e_rnnt"
+        elif self.method == TranscribeOptions.GIGAAM_E2E_CTC:
+            revision = "e2e_ctc"
+
+        if not revision:
+            raise ValueError(f"Unsupported GigaAM model: {self.method}")
+
+        logger.info("Loading GigaAM model (revision: %s)...", revision)
+
+        cache_dir = settings.CACHE_DIR / "gigaam"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # trust_remote_code is required for custom GigaAM classes with .transcribe()
+        model = AutoModel.from_pretrained(
+            "ai-sage/GigaAM-v3",
+            revision=revision,
+            trust_remote_code=True,
+            cache_dir=str(cache_dir),
+        )
+
+        try:
+            model = model.to(self.device)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Could not move GigaAM model to %s: %s", self.device, exc)
+
+        self.model = model
+        logger.info("GigaAM model loaded successfully")
+
     def transcribe(
         self,
         audio_path: Path,
@@ -273,15 +324,23 @@ class Transcriber:
         logger.info("Starting transcription: %s", audio_path.name)
 
         if initial_prompt:
-            logger.info("Using initial prompt (length: %d chars)", len(initial_prompt))
-            logger.debug(
-                "Prompt preview (first 80 chars): %s",
-                format_log_preview(initial_prompt),
-            )
+            if self._is_gigaam_method():
+                logger.info(
+                    "Initial prompt provided but GigaAM models ignore prompts; proceeding without it."
+                )
+            else:
+                logger.info(
+                    "Using initial prompt (length: %d chars)", len(initial_prompt)
+                )
+                logger.debug(
+                    "Prompt preview (first 80 chars): %s",
+                    format_log_preview(initial_prompt),
+                )
         else:
-            logger.warning(
-                "No initial prompt provided. Consider using --whisper-prompt for better accuracy."
-            )
+            if not self._is_gigaam_method():
+                logger.warning(
+                    "No initial prompt provided. Consider using --whisper-prompt for better accuracy."
+                )
 
         # Check cache first
         if self.use_cache:
@@ -319,6 +378,21 @@ class Transcriber:
                 segments = self._perform_speaker_diarization(audio_path, segments)
 
             # Cache the result for OpenAI API transcriptions
+            if self.use_cache:
+                segments_dict = [seg.to_dict() for seg in segments]
+                self.cache.set("transcription", cache_key, segments_dict)
+
+            return segments
+
+        if self._is_gigaam_method():
+            self._load_model()
+            segments = self._transcribe_with_gigaam(
+                audio_path, language=language, initial_prompt=initial_prompt
+            )
+
+            if with_speakers:
+                segments = self._perform_speaker_diarization(audio_path, segments)
+
             if self.use_cache:
                 segments_dict = [seg.to_dict() for seg in segments]
                 self.cache.set("transcription", cache_key, segments_dict)
@@ -407,6 +481,85 @@ class Transcriber:
             self.cache.set("transcription", cache_key, segments_dict)
 
         return segments
+
+    def _get_audio_duration(self, audio_path: Path) -> Optional[float]:
+        """Return audio duration in seconds using ffprobe."""
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(audio_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return float(result.stdout.strip())
+        except Exception as exc:  # pragma: no cover
+            logger.debug("Unable to determine audio duration: %s", exc)
+            return None
+
+    def _transcribe_with_gigaam(
+        self,
+        audio_path: Path,
+        language: Optional[str] = None,
+        initial_prompt: Optional[str] = None,
+    ) -> List[TranscriptionSegment]:
+        """Transcribe audio using a GigaAM model with local chunking."""
+        duration = self._get_audio_duration(audio_path)
+        if duration:
+            estimate = estimate_processing_time(duration, "transcribe", self.method)
+            logger.info("Estimated processing time: %s", estimate)
+
+        # Decide whether to chunk (GigaAM transcribe() supports ~25s max).
+        if duration is not None and duration <= 24.0:
+            chunks: List[Tuple[Path, float, float]] = [
+                (audio_path, 0.0, duration)
+            ]
+        else:
+            chunks = self._split_audio_for_gigaam(audio_path)
+            logger.info("Prepared %d chunks for GigaAM", len(chunks))
+
+        cleanup_after = any(chunk_path != audio_path for chunk_path, _, _ in chunks)
+
+        segments: List[TranscriptionSegment] = []
+        try:
+            for chunk_path, start, end in chunks:
+                text = self.model.transcribe(str(chunk_path))
+                chunk_duration = end - start if end > start else 0.0
+                if chunk_duration == 0.0:
+                    detected_chunk_duration = self._get_audio_duration(chunk_path)
+                    if detected_chunk_duration:
+                        chunk_duration = detected_chunk_duration
+                end_time = start + chunk_duration
+                segments.append(
+                    TranscriptionSegment(start=start, end=end_time, text=text)
+                )
+        finally:
+            if cleanup_after:
+                for chunk_path, _, _ in chunks:
+                    if chunk_path == audio_path:
+                        continue
+                    try:
+                        if chunk_path.exists():
+                            chunk_path.unlink()
+                        _temp_chunk_files.discard(chunk_path)
+                    except Exception as exc:  # pragma: no cover
+                        logger.debug("Failed to delete temp chunk %s: %s", chunk_path, exc)
+
+        # Clean up common hallucinations lightly using expected language hint (default ru).
+        cleaned_segments = self._clean_hallucinations(
+            segments, expected_language=language or "ru"
+        )
+        return cleaned_segments
 
     def _get_vad_pipeline(self):
         """
@@ -1066,15 +1219,16 @@ class Transcriber:
         get_speech_timestamps = utils[0]
 
         # Run VAD with optimized parameters
+        # Slightly more sensitive settings to surface more pauses for chunk splitting.
         speech_timestamps = get_speech_timestamps(
             wav.squeeze(0),
             model,
             sampling_rate=sample_rate,
-            threshold=0.5,  # Speech probability threshold
-            min_speech_duration_ms=250,  # Minimum speech duration
-            min_silence_duration_ms=300,  # Minimum silence to split
+            threshold=0.45,  # Lower threshold → more segments detected
+            min_speech_duration_ms=220,  # Allow shorter speech fragments
+            min_silence_duration_ms=220,  # Treat shorter gaps as splits
             window_size_samples=512,  # Processing window
-            speech_pad_ms=30,  # Padding around speech
+            speech_pad_ms=80,  # Add padding to avoid cutting words
         )
 
         # Convert to seconds
@@ -1086,6 +1240,146 @@ class Transcriber:
 
         logger.info("Found %d speech segments with Silero VAD", len(speech_segments))
         return speech_segments
+
+    def _create_chunks_from_points(
+        self, audio_path: Path, split_points: List[tuple], prefix: str = "chunk"
+    ) -> List[Tuple[Path, float, float]]:
+        """
+        Export chunks based on provided split points.
+        """
+        import subprocess
+
+        chunks: List[Tuple[Path, float, float]] = []
+        temp_dir = audio_path.parent
+        base_name = audio_path.stem
+        original_extension = audio_path.suffix
+
+        for i, (start_time, end_time) in enumerate(split_points):
+            chunk_path = temp_dir / f"{base_name}_{prefix}_{i}{original_extension}"
+            duration = end_time - start_time
+
+            # Try stream copy first (fast, no re-encoding)
+            try:
+                subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-i",
+                        str(audio_path),
+                        "-ss",
+                        str(start_time),
+                        "-t",
+                        str(duration),
+                        "-c",
+                        "copy",
+                        "-y",
+                        str(chunk_path),
+                    ],
+                    capture_output=True,
+                    check=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                # Stream copy failed, try re-encoding
+                logger.warning(
+                    "Stream copy failed for chunk %d (error: %s). Re-encoding...",
+                    i,
+                    e.stderr[:100] if e.stderr else "unknown",
+                )
+
+                # Use MP3 encoding as fallback (widely compatible)
+                chunk_path = temp_dir / f"{base_name}_{prefix}_{i}.mp3"
+                try:
+                    subprocess.run(
+                        [
+                            "ffmpeg",
+                            "-i",
+                            str(audio_path),
+                            "-ss",
+                            str(start_time),
+                            "-t",
+                            str(duration),
+                            "-c:a",
+                            "libmp3lame",
+                            "-b:a",
+                            "192k",
+                            "-y",
+                            str(chunk_path),
+                        ],
+                        capture_output=True,
+                        check=True,
+                        text=True,
+                    )
+                    logger.debug("Successfully re-encoded chunk %d to MP3", i)
+                except subprocess.CalledProcessError as e2:
+                    logger.error(
+                        "Failed to create chunk %d even with re-encoding: %s",
+                        i,
+                        e2.stderr[:200] if e2.stderr else "unknown error",
+                    )
+                    raise
+
+            # Register chunk for cleanup
+            _temp_chunk_files.add(chunk_path)
+
+            chunks.append((chunk_path, start_time, end_time))
+            logger.debug(
+                "Created chunk %d/%d: %s (%.1f-%.1f sec, %.1f sec duration)",
+                i + 1,
+                len(split_points),
+                chunk_path.name,
+                start_time,
+                end_time,
+                duration,
+            )
+
+        return chunks
+
+    def _split_audio_for_gigaam(
+        self, audio_path: Path, target_chunk_duration: float = 20.0
+    ) -> List[Tuple[Path, float, float]]:
+        """
+        Split audio into ~target_chunk_duration pieces for GigaAM (needs <=25s).
+        """
+        import math
+
+        duration = self._get_audio_duration(audio_path)
+        if duration is None:
+            logger.warning(
+                "Could not determine audio duration; proceeding without pre-chunking."
+            )
+            return [(audio_path, 0.0, 0.0)]
+
+        logger.info(
+            "Splitting audio (%.1fs) into ~%.0fs chunks for GigaAM long-form",
+            duration,
+            target_chunk_duration,
+        )
+
+        speech_segments = self._find_speech_boundaries(audio_path)
+        split_points = self._calculate_split_points(
+            duration, target_chunk_duration, speech_segments
+        )
+        if not split_points:
+            # Edge case: extremely short files.
+            return [(audio_path, 0.0, duration)]
+
+        # Guardrail: ensure we won't exceed the transcribe() 25s limit.
+        max_chunk = max(end - start for start, end in split_points)
+        if max_chunk > 25.0:
+            logger.warning(
+                "Calculated chunk duration %.1fs exceeds 25s limit; increasing count.",
+                max_chunk,
+            )
+            num_chunks = math.ceil(duration / 20.0)
+            adjusted_points = []
+            chunk_duration = duration / num_chunks
+            for i in range(num_chunks):
+                start = i * chunk_duration
+                end = min((i + 1) * chunk_duration, duration)
+                adjusted_points.append((start, end))
+            split_points = adjusted_points
+
+        return self._create_chunks_from_points(audio_path, split_points, prefix="giga")
 
     def _split_audio_file(self, audio_path: Path, max_size_mb: int = 24) -> List[tuple]:
         """
@@ -1198,91 +1492,9 @@ class Transcriber:
         )
 
         # Create chunks based on split points
-        chunks = []
-        temp_dir = audio_path.parent
-        base_name = audio_path.stem
-        # Preserve original file extension to match container format
-        original_extension = audio_path.suffix
-
-        for i, (start_time, end_time) in enumerate(split_points):
-            chunk_path = temp_dir / f"{base_name}_chunk_{i}{original_extension}"
-            duration = end_time - start_time
-
-            # Try stream copy first (fast, no re-encoding)
-            try:
-                subprocess.run(
-                    [
-                        "ffmpeg",
-                        "-i",
-                        str(audio_path),
-                        "-ss",
-                        str(start_time),
-                        "-t",
-                        str(duration),
-                        "-c",
-                        "copy",
-                        "-y",
-                        str(chunk_path),
-                    ],
-                    capture_output=True,
-                    check=True,
-                    text=True,
-                )
-            except subprocess.CalledProcessError as e:
-                # Stream copy failed, try re-encoding
-                logger.warning(
-                    "Stream copy failed for chunk %d (error: %s). Re-encoding...",
-                    i,
-                    e.stderr[:100] if e.stderr else "unknown",
-                )
-
-                # Use MP3 encoding as fallback (widely compatible)
-                chunk_path = temp_dir / f"{base_name}_chunk_{i}.mp3"
-                try:
-                    subprocess.run(
-                        [
-                            "ffmpeg",
-                            "-i",
-                            str(audio_path),
-                            "-ss",
-                            str(start_time),
-                            "-t",
-                            str(duration),
-                            "-c:a",
-                            "libmp3lame",
-                            "-b:a",
-                            "192k",
-                            "-y",
-                            str(chunk_path),
-                        ],
-                        capture_output=True,
-                        check=True,
-                        text=True,
-                    )
-                    logger.debug("Successfully re-encoded chunk %d to MP3", i)
-                except subprocess.CalledProcessError as e2:
-                    logger.error(
-                        "Failed to create chunk %d even with re-encoding: %s",
-                        i,
-                        e2.stderr[:200] if e2.stderr else "unknown error",
-                    )
-                    raise
-
-            # Register chunk for cleanup
-            _temp_chunk_files.add(chunk_path)
-
-            chunks.append((chunk_path, start_time, end_time))
-            logger.debug(
-                "Created chunk %d/%d: %s (%.1f-%.1f sec, %.1f sec duration)",
-                i + 1,
-                len(split_points),
-                chunk_path.name,
-                start_time,
-                end_time,
-                duration,
-            )
-
-        return chunks
+        return self._create_chunks_from_points(
+            audio_path, split_points, prefix="chunk"
+        )
 
     def _calculate_split_points(
         self,

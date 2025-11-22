@@ -34,3 +34,7 @@ noisereduce>=3.0.0
 
 # Optional: Text file processing (расширенная версия)
 python-docx>=1.1.0
+
+# Optional: GigaAM ASR backend
+# Use official HF repo via transformers (already a dependency); keep here as optional torch-based package
+gigaam==0.1.0

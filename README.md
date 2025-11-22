@@ -4,7 +4,13 @@ A flexible toolkit for transcribing and translating YouTube videos, audio files,
 
 ## 🎯 Highlights
 
-### Version 1.6 (current)
+### Version 1.7 (current)
+- ✅ **GigaAM v3 backend (RU)**
+  - Optional models `gigaam-e2e-rnnt` / `gigaam-e2e-ctc` via Hugging Face (`transformers`, torch ≥ 2.6)
+  - Supports caching, VAD-driven chunking, and long-form processing
+  - New unit tests for loading and chunking (`tests/test_gigaam_backend.py`)
+
+### Version 1.6
 - ✅ **Early API Key Validation**
   - Validates OpenAI API keys at startup with test API call
   - Fails fast before expensive operations (downloads, processing)
@@ -323,6 +329,8 @@ python -m src.main <command> [options]
 - `whisper-small` — slower, higher quality
 - `whisper-medium` — slowest, best quality
 - `whisper-openai-api` — OpenAI Whisper API (requires OPENAI_API_KEY)
+- `gigaam-e2e-rnnt` — GigaAM v3 (RU), максимальное качество + пунктуация/нормализация
+- `gigaam-e2e-ctc` — GigaAM v3 (RU), быстрее, чуть проще модели
 
 **Refinement (requires Ollama or OpenAI API)**
 - `qwen2.5:3b` — fast, 3 GB (recommended)
