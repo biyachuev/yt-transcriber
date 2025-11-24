@@ -36,7 +36,7 @@ class ColoredFormatter(logging.Formatter):
         # Reset levelname back to original (important for handlers)
         record.levelname = levelname
 
-        return formatted
+    return formatted
 
 
 def setup_logger(name: str = "yt") -> logging.Logger:
@@ -91,6 +91,13 @@ def format_orange(text: str) -> str:
         Formatted text with ANSI color codes
     """
     return f"\033[38;5;208m{text}\033[0m"
+
+
+def format_warning(text: str) -> str:
+    """
+    Format text with the same color used for WARNING levelnames.
+    """
+    return f"{ColoredFormatter.COLORS['WARNING']}{text}{ColoredFormatter.RESET}"
 
 
 # Global logger instance.

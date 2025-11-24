@@ -14,6 +14,7 @@ project_root = script_dir if (script_dir / "src").exists() else script_dir.paren
 sys.path.insert(0, str(project_root))
 
 from src.transcriber import Transcriber
+from src.logger import format_warning
 from src.translator import Translator
 from src.utils import detect_language
 from src.config import settings, TranscribeOptions
@@ -175,7 +176,7 @@ print()
 original_text = transcriber.segments_to_text(segments)
 detected_lang = detect_language(original_text)
 
-print(f"Detected language: {detected_lang}")
+print(f"Detected language: {format_warning(str(detected_lang).upper())}")
 print()
 
 if detected_lang == "ru":

@@ -24,7 +24,7 @@ from .config import (
     RefineOptions,
     SummarizeOptions,
 )
-from .logger import logger
+from .logger import logger, format_warning
 from .downloader import YouTubeDownloader
 from .transcriber import Transcriber
 from .document_writer import DocumentWriter
@@ -139,6 +139,7 @@ Global Options:
 
 Common Options (available for all commands):
     --transcribe METHOD         Transcription method (whisper-base, whisper-small, whisper-medium, whisper-openai-api, gigaam-e2e-rnnt, gigaam-e2e-ctc)
+    --language CODE             Force source language (e.g., ru or en). Defaults to auto-detect.
     --translate METHOD          Translation method (nllb, openai-api)
     --prompt-file PATH          Custom Whisper prompt file
     --refine-model MODEL        Model for transcript refinement (e.g. qwen2.5:3b, gpt-4)
@@ -264,9 +265,7 @@ def process_text_file(
 
     # Detect input language.
     detected_language = text_reader.detect_language(text_content)
-    logger.info(
-        "Detected language: %s", "Russian" if detected_language == "ru" else "English"
-    )
+    logger.info("Detected language: %s", format_warning(str(detected_language).upper()))
 
     # Build pseudo-segments to reuse the existing pipeline.
     paragraphs = [p.strip() for p in text_content.split("\n\n") if p.strip()]
@@ -536,6 +535,12 @@ def validate_args(command: str, args) -> bool:
         logger.error("%s command requires --transcribe to be set", command.capitalize())
         return False
 
+    # Validate language override
+    if hasattr(args, "language") and args.language:
+        if args.language.lower() not in ("ru", "en"):
+            logger.error("Unsupported language code '%s'. Use 'ru' or 'en'.", args.language)
+            return False
+
     # Validate refinement parameters early (before expensive operations)
     if hasattr(args, "refine_model") and args.refine_model:
         if args.refine_backend == "openai_api":
@@ -754,6 +759,7 @@ def validate_args(command: str, args) -> bool:
 def process_youtube_video(
     url: str,
     transcribe_method: str,
+    language: Optional[str] = None,
     translate_methods: Optional[list[str]] = None,
     with_speakers: bool = False,
     custom_prompt: Optional[str] = None,
@@ -772,6 +778,7 @@ def process_youtube_video(
     Args:
         url: Video URL.
         transcribe_method: Whisper backend to use.
+        language: Force source language (ru/en); default is auto-detect.
         translate_methods: Translation backends to run.
         with_speakers: Whether to enable speaker diarisation.
         custom_prompt: Optional custom Whisper prompt.
@@ -838,7 +845,7 @@ def process_youtube_video(
     transcriber = Transcriber(method=transcribe_method)
     transcription_segments = transcriber.transcribe(
         audio_path,
-        language=None,  # Auto-detect
+        language=language,  # Auto-detect when None
         with_speakers=with_speakers,
         initial_prompt=whisper_prompt,
     )
@@ -1128,6 +1135,7 @@ def process_youtube_video(
 def process_local_video(
     video_path: str,
     transcribe_method: str,
+    language: Optional[str] = None,
     translate_methods: Optional[list[str]] = None,
     with_speakers: bool = False,
     custom_prompt: Optional[str] = None,
@@ -1146,6 +1154,7 @@ def process_local_video(
     Args:
         video_path: Path to the video file.
         transcribe_method: Transcription backend to use.
+        language: Force source language (ru/en); default is auto-detect.
         translate_methods: Translation backends to apply.
         with_speakers: Enable speaker diarisation (not yet supported).
         custom_prompt: Optional custom Whisper prompt.
@@ -1186,7 +1195,7 @@ def process_local_video(
     transcriber = Transcriber(method=transcribe_method)
     transcription_segments = transcriber.transcribe(
         audio_path,
-        language=None,  # Auto-detect
+        language=language,  # Auto-detect when None
         with_speakers=with_speakers,
         initial_prompt=custom_prompt,
     )
@@ -1474,6 +1483,7 @@ def process_local_video(
 def process_local_audio(
     audio_path: str,
     transcribe_method: str,
+    language: Optional[str] = None,
     translate_methods: Optional[list[str]] = None,
     with_speakers: bool = False,
     custom_prompt: Optional[str] = None,
@@ -1492,6 +1502,7 @@ def process_local_audio(
     Args:
         audio_path: Path to the audio file.
         transcribe_method: Transcription backend to use.
+        language: Force source language (ru/en); default is auto-detect.
         translate_methods: Translation backends to apply.
         with_speakers: Enable speaker diarisation (not yet supported).
         custom_prompt: Optional custom Whisper prompt.
@@ -1520,7 +1531,7 @@ def process_local_audio(
     transcriber = Transcriber(method=transcribe_method)
     transcription_segments = transcriber.transcribe(
         audio_path_obj,
-        language=None,  # Auto-detect
+        language=language,  # Auto-detect when None
         with_speakers=with_speakers,
         initial_prompt=custom_prompt,
     )
@@ -1809,6 +1820,8 @@ def normalize_method_names(args):
     """Normalize method names to internal format (underscore-based)."""
     if hasattr(args, "transcribe") and args.transcribe:
         args.transcribe = args.transcribe.replace("-", "_")
+    if hasattr(args, "language") and args.language:
+        args.language = args.language.lower()
     if hasattr(args, "translate") and args.translate:
         # Normalize each method in comma-separated list
         methods = [
@@ -1839,6 +1852,13 @@ def main():
             "--transcribe",
             type=str,
             help="Transcription method (whisper-base, whisper-small, whisper-medium, whisper-openai-api, gigaam-e2e-rnnt, gigaam-e2e-ctc)",
+        )
+        subparser.add_argument(
+            "--language",
+            "-l",
+            type=str,
+            dest="language",
+            help="Force source language code (e.g., ru or en). Defaults to auto-detect.",
         )
         subparser.add_argument(
             "--translate", type=str, help="Translation method (nllb, openai-api)"
@@ -2029,6 +2049,7 @@ def main():
             process_youtube_video(
                 url=args.url,
                 transcribe_method=args.transcribe,
+                language=getattr(args, "language", None),
                 translate_methods=translate_methods,
                 with_speakers=getattr(args, "speakers", False),
                 custom_prompt=custom_prompt,
@@ -2045,6 +2066,7 @@ def main():
             process_local_audio(
                 audio_path=args.input,
                 transcribe_method=args.transcribe,
+                language=getattr(args, "language", None),
                 translate_methods=translate_methods,
                 with_speakers=getattr(args, "speakers", False),
                 custom_prompt=custom_prompt,
@@ -2061,6 +2083,7 @@ def main():
             process_local_video(
                 video_path=args.input,
                 transcribe_method=args.transcribe,
+                language=getattr(args, "language", None),
                 translate_methods=translate_methods,
                 with_speakers=getattr(args, "speakers", False),
                 custom_prompt=custom_prompt,

@@ -16,7 +16,7 @@ import whisper
 from tqdm import tqdm
 
 from src.config import settings, TranscribeOptions
-from src.logger import logger
+from src.logger import logger, format_warning
 from src.utils import format_timestamp, estimate_processing_time, format_log_preview
 from src.api_cache import get_cache
 
@@ -431,6 +431,70 @@ class Transcriber:
             "fp16": True if self.device == "cuda" else False,
         }
 
+        language_set = False
+        pre_language = None
+        pre_language_confidence = None
+        first_speech_start = None
+
+        if language is None and not self._is_gigaam_method():
+            (
+                pre_language,
+                pre_language_confidence,
+                first_speech_start,
+            ) = self._detect_language_from_first_speech(audio_path)
+
+            # Helper to infer a hint from filename/prompt scripts.
+            def _lang_hint_from_text(text: str) -> Optional[str]:
+                cyr = len(re.findall(r"[а-яА-ЯёЁ]", text))
+                lat = len(re.findall(r"[a-zA-Z]", text))
+                if cyr >= 4 and cyr > lat:
+                    return "ru"
+                if lat >= 4 and lat > cyr:
+                    return "en"
+                return None
+
+            # 1) Trust high-confidence VAD-based detection.
+            if pre_language and (pre_language_confidence or 0.0) >= 0.7:
+                transcribe_options["language"] = pre_language
+                language_set = True
+                logger.info(
+                    "Language auto-detected from first speech (%.1fs in): %s (p=%.2f)",
+                    first_speech_start or 0.0,
+                    format_warning(pre_language.upper()),
+                    pre_language_confidence if pre_language_confidence else 0.0,
+                )
+            else:
+                # 2) If low confidence, fall back to script hints from filename/prompt.
+                hint_source = None
+                filename_hint = _lang_hint_from_text(audio_path.stem)
+                prompt_hint = (
+                    _lang_hint_from_text(initial_prompt) if initial_prompt else None
+                )
+
+                if filename_hint:
+                    transcribe_options["language"] = filename_hint
+                    language_set = True
+                    hint_source = "filename"
+                elif prompt_hint:
+                    transcribe_options["language"] = prompt_hint
+                    language_set = True
+                    hint_source = "prompt"
+
+                if language_set:
+                    logger.info(
+                        "Language hint from %s: %s (first-speech detect: %s, p=%.2f)",
+                        hint_source,
+                        format_warning(transcribe_options["language"].upper()),
+                        format_warning((pre_language or "unknown").upper()),
+                        pre_language_confidence if pre_language_confidence else 0.0,
+                    )
+                elif pre_language:
+                    logger.info(
+                        "Language auto-detect from first speech low confidence (p=%.2f): %s; keeping Whisper auto mode",
+                        pre_language_confidence if pre_language_confidence else 0.0,
+                        format_warning(pre_language.upper()),
+                    )
+
         if initial_prompt:
             transcribe_options["initial_prompt"] = initial_prompt
 
@@ -461,7 +525,7 @@ class Transcriber:
             result, segments = _run_transcription(transcribe_options)
 
         detected_language = result.get("language", "unknown")
-        logger.info("Detected language: %s", detected_language)
+        logger.info("Detected language: %s", format_warning(str(detected_language).upper()))
         logger.info("Transcription finished. Generated %d segments", len(segments))
 
         # Clean up hallucinations
@@ -1241,6 +1305,84 @@ class Transcriber:
         logger.info("Found %d speech segments with Silero VAD", len(speech_segments))
         return speech_segments
 
+    def _detect_language_from_first_speech(
+        self, audio_path: Path
+    ) -> Tuple[Optional[str], Optional[float], Optional[float]]:
+        """
+        Detect language using the first speech fragment instead of the file start.
+
+        Returns:
+            Tuple of (language_code, confidence, speech_start_seconds).
+        """
+        try:
+            speech_segments = self._find_speech_boundaries(audio_path)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(
+                "Failed to detect speech boundaries for language guess: %s", exc
+            )
+            return None, None, None
+
+        if not speech_segments:
+            logger.debug("No speech segments found; falling back to Whisper auto-detect")
+            return None, None, None
+
+        first_start, first_end = speech_segments[0]
+
+        # Build a richer speech window (helps when the very first words are off-language).
+        target_speech_seconds = 25.0  # aim for this much voiced audio
+        max_window_seconds = 180.0  # absolute cap to keep detection quick
+
+        speech_covered = max(0.0, first_end - first_start)
+        window_end = first_end
+
+        for seg_start, seg_end in speech_segments[1:]:
+            # Stop expanding if we already have enough speech or went too far in time.
+            if speech_covered >= target_speech_seconds:
+                break
+            if seg_start - first_start > max_window_seconds:
+                break
+
+            speech_covered += max(0.0, seg_end - seg_start)
+            window_end = max(window_end, seg_end)
+
+        window_end = min(window_end, first_start + max_window_seconds)
+        if window_end <= first_start:
+            logger.debug("Speech window is empty; skipping language pre-detection")
+            return None, None, None
+
+        try:
+            audio = whisper.load_audio(str(audio_path))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Failed to load audio for language detection: %s", exc)
+            return None, None, None
+
+        sample_rate = whisper.audio.SAMPLE_RATE
+        start_sample = int(max(0.0, first_start) * sample_rate)
+        end_sample = int(min(len(audio), window_end * sample_rate))
+
+        if start_sample >= len(audio):
+            logger.debug("Speech start is beyond audio length; skipping pre-detection")
+            return None, None, None
+
+        if end_sample - start_sample < sample_rate * 2:
+            # Ensure we have a few seconds of actual speech for detection.
+            end_sample = min(len(audio), start_sample + sample_rate * 10)
+
+        audio_chunk = audio[start_sample:end_sample]
+        if audio_chunk.size == 0:
+            logger.debug("Empty audio chunk for language detection")
+            return None, None, None
+
+        mel = whisper.log_mel_spectrogram(
+            whisper.pad_or_trim(audio_chunk)
+        ).to(self.model.device)
+        _, probs = self.model.detect_language(mel)
+
+        language = max(probs, key=probs.get)
+        confidence = float(probs[language])
+
+        return language, confidence, first_start
+
     def _create_chunks_from_points(
         self, audio_path: Path, split_points: List[tuple], prefix: str = "chunk"
     ) -> List[Tuple[Path, float, float]]:
@@ -1872,7 +2014,7 @@ class Transcriber:
             detected_language = (
                 response.language if hasattr(response, "language") else "unknown"
             )
-            logger.info("Detected language: %s", detected_language)
+            logger.info("Detected language: %s", format_warning(str(detected_language).upper()))
             logger.info("Transcription finished. Generated %d segments", len(segments))
 
             # Clean up hallucinations
