@@ -37,7 +37,8 @@ class TestTextRefiner:
         mock_response.json.return_value = {"models": [{"name": "other-model"}]}
         mock_get.return_value = mock_response
 
-        with pytest.raises(RuntimeError, match="не найдена в Ollama"):
+        # Expect English error text for missing model
+        with pytest.raises(RuntimeError, match="not found in Ollama"):
             TextRefiner(model_name="qwen2.5:3b")
 
     @patch("src.text_refiner.requests.get")

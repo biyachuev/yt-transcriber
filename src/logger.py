@@ -36,7 +36,7 @@ class ColoredFormatter(logging.Formatter):
         # Reset levelname back to original (important for handlers)
         record.levelname = levelname
 
-    return formatted
+        return formatted
 
 
 def setup_logger(name: str = "yt") -> logging.Logger:

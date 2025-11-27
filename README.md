@@ -230,6 +230,26 @@ Produces two documents:
 - `audio_original.docx/md` — raw transcript without translation
 - `audio_refined.docx/md` — polished transcript with translation
 
+Add LLM polish for the translation as well (Ollama backend):
+```bash
+python -m src.main audio \
+    --input audio.mp3 \
+    --transcribe whisper-medium \
+    --refine-model qwen2.5:7b \
+    --translate nllb \
+    --refine-translation qwen2.5:3b
+```
+
+Use OpenAI GPT-4o Mini for refinement (requires `OPENAI_API_KEY`):
+```bash
+python -m src.main audio \
+    --input audio.mp3 \
+    --transcribe whisper-medium \
+    --refine-backend openai-api \
+    --refine-model gpt-4o-mini-2024-07-18
+```
+`gpt-4o-mini` is an alias; the full dated ID keeps you on a fixed model version.
+
 #### 6. Use a custom Whisper prompt
 
 ```bash
@@ -315,12 +335,15 @@ python -m src.main <command> [options]
 | `--transcribe` | Transcription method | `--transcribe whisper-base` |
 | `--translate` | Translation method | `--translate nllb` |
 | `--refine-model` | Model for refinement | `--refine-model qwen2.5:7b` |
-| `--refine-backend` | Refinement backend | `--refine-backend ollama` |
+| `--refine-backend` | Backend for **transcript** refinement (not translation) | `--refine-backend ollama` |
 | `--prompt-file` | Custom Whisper prompt file | `--prompt-file prompt.txt` |
 | `--nllb-model` | NLLB model override | `--nllb-model facebook/nllb-200-distilled-600M` |
+| `--refine-translation` | LLM polish for the translated text (Ollama) | `--refine-translation qwen2.5:3b` |
 | `--speakers` | Enable speaker diarization | `--speakers` |
 | `--summarize-model` | Model for summarization | `--summarize-model qwen2.5:7b` |
 | `--help` | Show help | `--help` |
+
+**Note:** `--refine-backend` only switches the backend for transcript refinement (`--refine-model`). Translation polishing uses `--refine-translation` and the Ollama backend.
 
 ### Available methods
 
@@ -338,7 +361,7 @@ python -m src.main <command> [options]
 - `llama3.2:3b` — fast, solid quality
 - `llama3:8b` — slower, higher quality
 - `mistral:7b` — balanced
-- `gpt-4o-mini` — OpenAI (requires API key)
+- `gpt-4o-mini-2024-07-18` — OpenAI GPT-4o Mini (API; alias `gpt-4o-mini` also works)
 - Any other model available in the [Ollama library](https://ollama.com/library)
 
 **Translation**

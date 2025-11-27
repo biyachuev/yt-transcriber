@@ -143,8 +143,8 @@ Common Options (available for all commands):
     --translate METHOD          Translation method (nllb, openai-api)
     --prompt-file PATH          Custom Whisper prompt file
     --refine-model MODEL        Model for transcript refinement (e.g. qwen2.5:3b, gpt-4)
-    --refine-backend BACKEND    Backend for refinement (ollama, openai-api)
-    --refine-translation MODEL  Model for translation refinement
+    --refine-backend BACKEND    Backend for transcript refinement (ollama, openai-api)
+    --refine-translation MODEL  Model for translation refinement (Ollama)
     --summarize-model MODEL     Model for summarization
     --summarize-backend BACKEND Backend for summarization (ollama, openai-api)
     --nllb-model MODEL          NLLB model (default: facebook/nllb-200-distilled-1.3B)
@@ -1881,7 +1881,7 @@ def main():
             dest="refine_backend",
             choices=["ollama", "openai-api", "openai_api"],
             default="ollama",
-            help="Backend for refinement (ollama, openai-api)",
+            help="Backend for transcript refinement (ollama, openai-api)",
         )
         subparser.add_argument(
             "--refine-translation",
@@ -1960,7 +1960,7 @@ def main():
         dest="refine_backend",
         choices=["ollama", "openai-api", "openai_api"],
         default="ollama",
-        help="Backend for refinement",
+        help="Backend for transcript refinement (not translation)",
     )
     text_parser.add_argument(
         "--refine-translation",

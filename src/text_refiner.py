@@ -59,7 +59,7 @@ class TextRefiner:
         try:
             response = requests.get(f"{self.ollama_url}/api/tags", timeout=5)
             if response.status_code == 200:
-                logger.info(f"Ollama сервер доступен: {self.ollama_url}")
+                logger.info(f"Ollama server is reachable: {self.ollama_url}")
 
                 # Проверяем наличие нужной модели
                 models = response.json().get("models", [])
@@ -68,63 +68,63 @@ class TextRefiner:
                 if self.model_name not in model_names:
                     error_msg = f"\n{'='*60}\n"
                     error_msg += (
-                        f"❌ ОШИБКА: Модель '{self.model_name}' не найдена в Ollama\n"
+                        f"❌ ERROR: Model '{self.model_name}' not found in Ollama\n"
                     )
                     error_msg += f"{'='*60}\n\n"
 
                     if model_names:
-                        error_msg += f"Доступные модели:\n"
+                        error_msg += "Available models:\n"
                         for name in model_names:
                             error_msg += f"  - {name}\n"
-                        error_msg += f"\n"
+                        error_msg += "\n"
                     else:
-                        error_msg += f"В Ollama нет загруженных моделей\n\n"
+                        error_msg += "No models are loaded in Ollama\n\n"
 
-                    error_msg += f"Для загрузки модели выполните:\n"
+                    error_msg += "To download the model, run:\n"
                     error_msg += f"  ollama pull {self.model_name}\n\n"
-                    error_msg += f"Рекомендуемые модели:\n"
-                    error_msg += f"  - qwen2.5:3b  (быстрая, ~2GB)\n"
-                    error_msg += f"  - qwen2.5:7b  (лучше качество, ~4.7GB)\n"
-                    error_msg += f"  - llama3:8b   (хорошая альтернатива, ~4.7GB)\n"
+                    error_msg += "Recommended models:\n"
+                    error_msg += "  - qwen2.5:3b  (fast, ~2GB)\n"
+                    error_msg += "  - qwen2.5:7b  (better quality, ~4.7GB)\n"
+                    error_msg += "  - llama3:8b   (solid alternative, ~4.7GB)\n"
                     error_msg += f"{'='*60}"
 
                     logger.error(error_msg)
                     raise RuntimeError(
-                        f"Модель '{self.model_name}' не найдена в Ollama. Выполните: ollama pull {self.model_name}"
+                        f"Model '{self.model_name}' not found in Ollama. Run: ollama pull {self.model_name}"
                     )
                 else:
-                    logger.info(f"Модель '{self.model_name}' найдена")
+                    logger.info(f"Model '{self.model_name}' found")
             else:
-                raise Exception("Ollama не отвечает")
+                raise Exception("Ollama is not responding")
         except requests.exceptions.RequestException as e:
             error_msg = f"\n{'='*60}\n"
-            error_msg += f"❌ ОШИБКА: Не удалось подключиться к Ollama серверу\n"
+            error_msg += "❌ ERROR: Could not connect to the Ollama server\n"
             error_msg += f"{'='*60}\n\n"
-            error_msg += f"Причина: {e}\n\n"
-            error_msg += f"Решение:\n"
-            error_msg += f"1. Проверьте, что Ollama установлена:\n"
-            error_msg += f"   https://ollama.com/download\n\n"
-            error_msg += f"2. Запустите Ollama сервер:\n"
-            error_msg += f"   ollama serve\n\n"
-            error_msg += f"3. Или просто запустите Ollama приложение\n"
+            error_msg += f"Reason: {e}\n\n"
+            error_msg += "Fixes:\n"
+            error_msg += "1. Ensure Ollama is installed:\n"
+            error_msg += "   https://ollama.com/download\n\n"
+            error_msg += "2. Start the Ollama server:\n"
+            error_msg += "   ollama serve\n\n"
+            error_msg += "3. Or simply start the Ollama app\n"
             error_msg += f"{'='*60}"
 
             logger.error(error_msg)
-            raise RuntimeError(f"Не удалось подключиться к Ollama: {e}")
+            raise RuntimeError(f"Could not connect to Ollama: {e}")
 
     def _check_openai_available(self):
         """Проверка доступности OpenAI API"""
         api_key = settings.OPENAI_API_KEY
         if not api_key:
             error_msg = f"\n{'='*60}\n"
-            error_msg += f"❌ ОШИБКА: OPENAI_API_KEY не найден\n"
+            error_msg += "❌ ERROR: OPENAI_API_KEY not found\n"
             error_msg += f"{'='*60}\n\n"
-            error_msg += f"Для использования OpenAI API необходимо:\n"
+            error_msg += "To use the OpenAI API you need:\n"
             error_msg += (
-                f"1. Получить API ключ на https://platform.openai.com/api-keys\n"
+                "1. Get an API key at https://platform.openai.com/api-keys\n"
             )
-            error_msg += f"2. Добавить его в .env файл:\n"
-            error_msg += f"   OPENAI_API_KEY=your-api-key-here\n"
+            error_msg += "2. Add it to your .env file:\n"
+            error_msg += "   OPENAI_API_KEY=your-api-key-here\n"
             error_msg += f"{'='*60}"
 
             logger.error(error_msg)
@@ -135,13 +135,13 @@ class TextRefiner:
 
             # Quick validation check
             client = OpenAI(api_key=api_key)
-            logger.info("OpenAI API доступен")
+            logger.info("OpenAI API is available")
         except ImportError:
             raise ImportError(
                 "OpenAI library not installed. Install it with: pip install openai>=1.6.0"
             )
         except Exception as e:
-            logger.error(f"Ошибка при проверке OpenAI API: {e}")
+            logger.error(f"Error while checking OpenAI API: {e}")
             raise
 
     def _split_text_into_chunks(
@@ -186,7 +186,7 @@ class TextRefiner:
         if current_chunk:
             chunks.append(" ".join(current_chunk))
 
-        logger.info(f"Текст разбит на {len(chunks)} частей для обработки")
+        logger.info(f"Text split into {len(chunks)} chunks for processing")
         return chunks
 
     def _call_ollama(self, prompt: str) -> str:
@@ -224,7 +224,7 @@ class TextRefiner:
             result = response.json()
             return result.get("response", "").strip()
         except Exception as e:
-            logger.error(f"Ошибка при вызове Ollama: {e}")
+            logger.error(f"Error while calling Ollama: {e}")
             raise
 
     @retry_api_call(max_retries=5)
@@ -291,7 +291,7 @@ class TextRefiner:
             return result
 
         except Exception as e:
-            logger.error(f"Ошибка при вызове OpenAI API: {e}")
+            logger.error(f"Error while calling OpenAI API: {e}")
             raise
 
     def _detect_topic(self, text_sample: str) -> str:
@@ -324,10 +324,10 @@ class TextRefiner:
             topic = topic.replace("<think>", "").replace("</think>", "")
             topic = topic.strip().split()[0] if topic.strip() else "общая"
 
-            logger.info(f"Определена тематика: {topic}")
+            logger.info(f"Detected topic: {topic}")
             return topic
         except Exception as e:
-            logger.warning(f"Не удалось определить тематику: {e}")
+            logger.warning(f"Failed to detect topic: {e}")
             return "общая"
 
     def _detect_language(self, text: str) -> str:
@@ -650,7 +650,7 @@ Now clean this text. Return ONLY the cleaned text:
 
             # Если после очистки текст стал слишком коротким - вернуть оригинал
             if len(refined_text.strip()) < len(chunk) * 0.3:
-                logger.warning("Улучшенный текст слишком короткий, возвращаю оригинал")
+                logger.warning("Refined text too short, returning original")
                 return self._group_lines_into_paragraphs(chunk).strip()
 
             # Post-processing: группируем короткие строки в абзацы
@@ -658,7 +658,7 @@ Now clean this text. Return ONLY the cleaned text:
 
             return refined_text.strip()
         except Exception as e:
-            logger.error(f"Ошибка при улучшении чанка: {e}")
+            logger.error(f"Failed to refine chunk: {e}")
             # В случае ошибки возвращаем оригинал (но сгруппированный по абзацам)
             return self._group_lines_into_paragraphs(chunk).strip()
 
@@ -673,12 +673,12 @@ Now clean this text. Return ONLY the cleaned text:
         Returns:
             Улучшенный текст
         """
-        logger.info("Начало улучшения транскрипции с помощью LLM...")
+        logger.info("Starting transcript refinement with LLM...")
 
         # Определяем язык текста
         language = self._detect_language(text[:500])
         logger.info(
-            f"Определён язык текста: {'русский' if language == 'ru' else 'английский'}"
+            f"Detected language: {'Russian' if language == 'ru' else 'English'}"
         )
 
         # Определяем тематику по началу текста
@@ -689,7 +689,7 @@ Now clean this text. Return ONLY the cleaned text:
 
         # Обрабатываем каждый чанк
         refined_chunks = []
-        for chunk in tqdm(chunks, desc="Улучшение текста"):
+        for chunk in tqdm(chunks, desc="Refining text"):
             refined_chunk = self.refine_chunk(
                 chunk, context=context, topic=topic, language=language
             )
@@ -698,7 +698,7 @@ Now clean this text. Return ONLY the cleaned text:
         # Объединяем результаты
         refined_text = "\n\n".join(refined_chunks)
 
-        logger.info("Улучшение транскрипции завершено")
+        logger.info("Transcript refinement finished")
         return refined_text
 
     def refine_translation(
@@ -714,7 +714,7 @@ Now clean this text. Return ONLY the cleaned text:
         Returns:
             Улучшенный перевод
         """
-        logger.info("Начало улучшения перевода с помощью LLM...")
+        logger.info("Starting translation refinement with LLM...")
 
         # Промпт для улучшения перевода
         TRANSLATION_REFINEMENT_PROMPT = """Ты - эксперт по адаптации и улучшению переводов. Твоя задача - переработать машинный перевод, сделав его естественным и понятным для русскоязычного читателя. Главное - передать смысл и основные идеи, а не копировать структуру предложений.
@@ -763,7 +763,7 @@ Now clean this text. Return ONLY the cleaned text:
         refined_chunks = []
         context_str = context if context else "не указан"
 
-        for chunk in tqdm(chunks, desc="Улучшение перевода"):
+        for chunk in tqdm(chunks, desc="Refining translation"):
             prompt = TRANSLATION_REFINEMENT_PROMPT.format(
                 text=chunk, context=context_str
             )
@@ -790,18 +790,18 @@ Now clean this text. Return ONLY the cleaned text:
                 # Если результат слишком короткий - вернуть оригинал
                 if len(refined_chunk.strip()) < len(chunk) * 0.3:
                     logger.warning(
-                        "Улучшенный перевод слишком короткий, возвращаю оригинал чанка"
+                        "Refined translation too short, returning original chunk"
                     )
                     refined_chunks.append(chunk)
                 else:
                     refined_chunks.append(refined_chunk.strip())
             except Exception as e:
-                logger.error(f"Ошибка при улучшении чанка перевода: {e}")
+                logger.error(f"Failed to refine translation chunk: {e}")
                 # В случае ошибки возвращаем оригинал
                 refined_chunks.append(chunk)
 
         # Объединяем результаты
         refined_translation = "\n\n".join(refined_chunks)
 
-        logger.info("Улучшение перевода завершено")
+        logger.info("Translation refinement finished")
         return refined_translation
